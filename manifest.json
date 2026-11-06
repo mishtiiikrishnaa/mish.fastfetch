@@ -1,0 +1,10 @@
+{
+  "id": "mish.fastfetch",
+  "name": "mish.fastfetch",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "starship prompt and fastfetch panel pinned above the file explorer, live.",
+  "author": "mishti",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
