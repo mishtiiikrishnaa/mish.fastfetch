@@ -2,9 +2,8 @@
 
 /* ═══════════════════════════════════════════════════════════════════════
    mish.fastfetch
-   a starship prompt + fastfetch card, as its own sidebar view.
-   same approach as sidebar-widgets: register an ItemView and let obsidian
-   place it, instead of injecting into the file explorer's DOM.
+   powerline starship prompt + `fastfetch` + macOS `date`, as a sidebar view.
+   uptime = time since obsidian was opened.
    ═══════════════════════════════════════════════════════════════════════ */
 
 const { Plugin, ItemView } = require('obsidian');
@@ -12,8 +11,11 @@ const { Plugin, ItemView } = require('obsidian');
 const VIEW_TYPE = 'tv-fetch-view';
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const DAYS_LONG = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
                 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const MONTHS_LONG = ['january', 'february', 'march', 'april', 'may', 'june',
+                     'july', 'august', 'september', 'october', 'november', 'december'];
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -30,6 +32,74 @@ const human = (bytes) => {
   if (bytes >= 1024) return Math.round(bytes / 1024) + ' kb';
   return bytes + ' b';
 };
+
+/* timezone abbreviation, the way `date` prints it */
+const TZ_ABBR = { 'Asia/Kolkata': 'ist', 'Asia/Calcutta': 'ist' };
+
+const tzName = (d) => {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (TZ_ABBR[zone]) return TZ_ABBR[zone];
+    const part = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
+      .formatToParts(d)
+      .find((p) => p.type === 'timeZoneName');
+    return part ? part.value.toLowerCase() : '';
+  } catch (e) {
+    return '';
+  }
+};
+
+/* 1d 02h 14m 05s, dropping the units that are still zero */
+const formatUptime = (ms) => {
+  let s = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(s / 86400); s %= 86400;
+  const hours = Math.floor(s / 3600); s %= 3600;
+  const mins = Math.floor(s / 60); s %= 60;
+
+  if (days) return days + 'd ' + pad(hours) + 'h ' + pad(mins) + 'm ' + pad(s) + 's';
+  if (hours) return hours + 'h ' + pad(mins) + 'm ' + pad(s) + 's';
+  return mins + 'm ' + pad(s) + 's';
+};
+
+/* ── starship-style powerline prompt ─────────────────────────────────── */
+
+const buildPrompt = (vaultName) => {
+  const bar = el('div', 'vf-bar');
+  const segs = [
+    ['vf-user', '\uF179 mishti'],
+    ['vf-path', '~/' + vaultName],
+    ['vf-ch vf-ch1', ''],
+    ['vf-ch vf-ch2', ''],
+    ['vf-ch vf-ch3', ''],
+    ['vf-clock', ''],
+  ];
+
+  const nodes = segs.map(([cls, text], i) => {
+    const seg = el('span', 'vf-seg ' + cls, text);
+    seg.style.zIndex = String(segs.length - i);   /* each arrow tip sits over the next segment */
+    bar.appendChild(seg);
+    return seg;
+  });
+
+  return { bar, clock: nodes[nodes.length - 1] };
+};
+
+const buildCmd = (exe, args, cursor) => {
+  const line = el('div', 'vf-cmd');
+  line.appendChild(el('span', 'vf-chev', '❯'));
+  if (exe) {
+    line.appendChild(document.createTextNode(' '));
+    line.appendChild(el('span', 'vf-exe', exe));
+  }
+  if (args) {
+    line.appendChild(document.createTextNode(' '));
+    line.appendChild(el('span', 'vf-arg', args));
+  }
+  if (cursor) line.appendChild(el('span', 'vf-cursor'));
+  return line;
+};
+
+/* ── the view ────────────────────────────────────────────────────────── */
 
 class FetchView extends ItemView {
   constructor(leaf, plugin) {
@@ -78,23 +148,12 @@ class FetchView extends ItemView {
   paint(card) {
     const refs = this.refs;
 
-    /* prompt bar */
-    const bar = el('div', 'vf-bar');
-    const pill = (cls, text) => el('span', 'vf-pill ' + cls, text);
+    /* prompt + fastfetch */
+    const prompt = buildPrompt(this.app.vault.getName());
+    refs.clock = prompt.clock;
+    card.appendChild(prompt.bar);
+    card.appendChild(buildCmd('fastfetch'));
 
-    bar.appendChild(pill('vf-os', '\uF179'));
-    bar.appendChild(pill('vf-user', 'mishti'));
-    bar.appendChild(pill('vf-path', '~/' + this.app.vault.getName()));
-    ['vf-deco-1', 'vf-deco-2', 'vf-deco-3']
-      .forEach((c) => bar.appendChild(el('span', 'vf-pill-deco ' + c)));
-
-    refs.clock = pill('vf-clock', '');
-    bar.appendChild(refs.clock);
-    bar.appendChild(el('span', 'vf-cmd', '❯ eza --tree --all'));
-    bar.appendChild(el('span', 'vf-cursor'));
-    card.appendChild(bar);
-
-    /* fastfetch rows */
     const rows = el('div', 'vf-rows');
     const row = (key, cls) => {
       rows.appendChild(el('div', 'vf-k', key));
@@ -111,14 +170,25 @@ class FetchView extends ItemView {
     refs.folders = row('folders', 'c');
     refs.files = row('files', 'p');
     refs.size = row('size', 'd');
-    refs.date = row('date', '');
-    refs.time = row('time', 'b');
+    refs.uptime = row('uptime', 'b');
     card.appendChild(rows);
 
     /* palette swatches, because fastfetch has them */
     const swatches = el('div', 'vf-swatches');
     for (let i = 0; i < 8; i++) swatches.appendChild(el('span'));
     card.appendChild(swatches);
+
+    /* macOS date commands */
+    card.appendChild(buildCmd('date'));
+    refs.date = el('div', 'vf-out b');
+    card.appendChild(refs.date);
+
+    card.appendChild(buildCmd('date', '"+%A, %d %B %Y"'));
+    refs.dateLong = el('div', 'vf-out p');
+    card.appendChild(refs.dateLong);
+
+    /* fresh prompt, blinking cursor */
+    card.appendChild(buildCmd('', '', true));
   }
 
   /* ── numbers ─────────────────────────────────────────────────────── */
@@ -162,10 +232,24 @@ class FetchView extends ItemView {
     if (!refs.clock) return;
 
     const d = new Date();
+    const hms = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+
+    /* prompt clock */
     refs.clock.textContent = '\uF43A ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-    refs.date.textContent = DAYS[d.getDay()] + ' ' + pad(d.getDate()) + ' ' +
-                            MONTHS[d.getMonth()] + ' ' + d.getFullYear();
-    refs.time.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+
+    /* `date`  →  fri 6 nov 20:59:47 ist 2026 */
+    refs.date.textContent = [
+      DAYS[d.getDay()], d.getDate(), MONTHS[d.getMonth()],
+      hms, tzName(d), d.getFullYear(),
+    ].filter(Boolean).join(' ');
+
+    /* `date "+%A, %d %B %Y"`  →  friday, 06 november 2026 */
+    refs.dateLong.textContent =
+      DAYS_LONG[d.getDay()] + ', ' + pad(d.getDate()) + ' ' +
+      MONTHS_LONG[d.getMonth()] + ' ' + d.getFullYear();
+
+    /* time since obsidian was opened */
+    refs.uptime.textContent = formatUptime(Date.now() - this.plugin.openedAt);
 
     /* periodic recount, so the numbers can't drift */
     if (++this.ticks % 15 === 0) this.refresh();
@@ -174,6 +258,11 @@ class FetchView extends ItemView {
 
 module.exports = class TerminalVaultFetch extends Plugin {
   async onload() {
+    /* the renderer's time origin is when this obsidian window started */
+    this.openedAt = (typeof performance !== 'undefined' && performance.timeOrigin)
+      ? performance.timeOrigin
+      : Date.now();
+
     this.registerView(VIEW_TYPE, (leaf) => new FetchView(leaf, this));
 
     this.addRibbonIcon('terminal', 'Open fetch', () => this.activate());
