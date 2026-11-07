@@ -37,6 +37,7 @@
   letter-spacing: 0.005em;
   /* hugs its content, so the full vault path always fits on one line; only
      shrinks (and wraps the path) when the pane is genuinely narrower */
+  position: relative;            /* the hover card positions itself against this */
   width: max-content;
   max-width: 100%;
   flex: 0 0 auto;
@@ -196,6 +197,59 @@
 .vf-swatches span:nth-child(6) { background: var(--vf-pink-hi, #ffa6c9); }
 .vf-swatches span:nth-child(7) { background: var(--vf-cyan, #a6fff0); }
 .vf-swatches span:nth-child(8) { background: var(--vf-fg, #e8e8ed); }
+
+/* ═══ hover card on the time pill ═══ */
+
+.vf-seg.vf-hover { cursor: default; }
+
+.vf-tip {
+  position: absolute;
+  z-index: 20;
+  padding: 7px 10px 8px;
+  background: var(--vf-bg, #0f0f12);
+  border: 1px solid var(--vf-line, #2a2a2f);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.vf-tip[hidden] { display: none; }
+.vf-tip-k { color: var(--vf-pink, #ff78a5); }
+.vf-tip-v { color: var(--vf-blue, #a6c9ff); }
+.vf-tip-v + .vf-tip-k { margin-top: 4px; }
+
+/* ═══ the "? info" card ═══ */
+
+.vf-last { display: flex; align-items: center; }
+.vf-info-btn {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--vf-dim, #6d6d7a);
+}
+.vf-info-btn:hover { color: var(--vf-blue, #a6c9ff); text-decoration: underline; }
+
+.vf-info { contain: inline-size; }      /* never makes the card wider than it already is */
+.vf-info[hidden] { display: none; }
+.vf-info-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px;
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid var(--vf-line, #2a2a2f);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.vf-info-d {
+  color: var(--vf-fg, #e8e8ed);
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
 
 /* ═══ rainbow gradient on our own icons ═══
    the gradient (#mish-rainbow) is injected by the plugin; the second value

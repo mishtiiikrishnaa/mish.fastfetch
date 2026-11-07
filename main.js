@@ -241,6 +241,21 @@ const buildCmd = (exe, args, cursor) => {
   return line;
 };
 
+/* what each thing in the card means (shown by the "? info" button) */
+const INFO = [
+  ['pills', 'your name · this vault · the time obsidian was opened (hover it)'],
+  ['user', 'who you are, on which machine'],
+  ['os', 'what obsidian is running on'],
+  ['vault', 'where this vault lives on your disk'],
+  ['notes', 'markdown notes (.md files)'],
+  ['links', '[[links]] and embeds, counted across every note'],
+  ['folders', 'folders in the vault (the root isn\'t counted)'],
+  ['files', 'every file: notes, images, pdfs, everything'],
+  ['size', 'total size of all those files'],
+  ['uptime', 'how long obsidian has been open'],
+  ['date', 'the time right now'],
+];
+
 /* ── the view ────────────────────────────────────────────────────────── */
 
 class FetchView extends ItemView {
@@ -302,9 +317,40 @@ class FetchView extends ItemView {
     fitBar(prompt.bar, [card, scroll]);   /* keeps the full vault name on screen */
     card.appendChild(buildCmd('fastfetch'));
 
+    /* hover card for the time pill (a native tooltip can't show here: the pill
+       is redrawn every second, which keeps cancelling it) */
+    const tip = el('div', 'vf-tip');
+    tip.hidden = true;
+    refs.tipOpened = el('div', 'vf-tip-v');
+    refs.tipUp = el('div', 'vf-tip-v');
+    tip.appendChild(el('div', 'vf-tip-k', 'obsidian opened'));
+    tip.appendChild(refs.tipOpened);
+    tip.appendChild(el('div', 'vf-tip-k', 'running for'));
+    tip.appendChild(refs.tipUp);
+    card.appendChild(tip);
+    refs.tip = tip;
+
+    const showTip = () => {
+      this.tick();
+      tip.hidden = false;
+      const c = card.getBoundingClientRect();
+      const p = refs.clock.getBoundingClientRect();
+      const w = tip.offsetWidth;
+      let left = p.right - c.left - w;                       /* right edges line up */
+      left = Math.max(8, Math.min(left, c.width - w - 8));   /* stay inside the card */
+      tip.style.left = left + 'px';
+      tip.style.top = (p.bottom - c.top + 6) + 'px';
+    };
+    refs.clock.addEventListener('mouseenter', showTip);
+    refs.clock.addEventListener('mouseleave', () => { tip.hidden = true; });
+    refs.clock.classList.add('vf-hover');
+
     const rows = el('div', 'vf-rows');
+    const hints = Object.fromEntries(INFO);
     const row = (key, cls) => {
-      rows.appendChild(el('div', 'vf-k', key));
+      const k = el('div', 'vf-k', key);
+      if (hints[key]) k.title = hints[key];
+      rows.appendChild(k);
       const value = el('div', 'vf-v ' + (cls || ''));
       rows.appendChild(value);
       return value;
@@ -334,8 +380,29 @@ class FetchView extends ItemView {
     refs.date = el('div', 'vf-out b');
     card.appendChild(refs.date);
 
-    /* fresh prompt, blinking cursor */
-    card.appendChild(buildCmd('', '', true));
+    /* the "what is all this" card: toggled by the button on the last prompt */
+    const info = el('div', 'vf-info');
+    info.hidden = true;
+    info.appendChild(buildCmd('fastfetch', '--info'));
+    const grid = el('div', 'vf-info-grid');
+    INFO.forEach(([key, text]) => {
+      grid.appendChild(el('div', 'vf-k', key));
+      grid.appendChild(el('div', 'vf-info-d', text));
+    });
+    info.appendChild(grid);
+    card.appendChild(info);
+
+    /* fresh prompt, blinking cursor, and the info button on the right */
+    const last = buildCmd('', '', true);
+    last.classList.add('vf-last');
+    const btn = el('span', 'vf-info-btn', '? info');
+    btn.title = 'what do these rows mean?';
+    btn.addEventListener('click', () => {
+      info.hidden = !info.hidden;
+      btn.textContent = info.hidden ? '? info' : '× close';
+    });
+    last.appendChild(btn);
+    card.appendChild(last);
   }
 
   /* ── numbers ─────────────────────────────────────────────────────── */
@@ -384,8 +451,20 @@ class FetchView extends ItemView {
     const d = new Date();
     const hms = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
 
-    /* prompt clock */
-    refs.clock.textContent = '\uF43A ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    /* prompt pill: when obsidian was opened (fixed, not a live clock).
+       a different day gets the date too, e.g. "6 nov 20:59".
+       only written when it actually changes, so hovering isn't disturbed */
+    const o = new Date(this.plugin.openedAt);
+    const sameDay = o.toDateString() === d.toDateString();
+    const label = '\uF43A ' + (sameDay ? '' : o.getDate() + ' ' + MONTHS[o.getMonth()] + ' ') +
+      pad(o.getHours()) + ':' + pad(o.getMinutes());
+    if (refs.clock.textContent !== label) refs.clock.textContent = label;
+
+    if (refs.tip && !refs.tip.hidden) {
+      refs.tipOpened.textContent = DAYS[o.getDay()] + ' ' + o.getDate() + ' ' + MONTHS[o.getMonth()] +
+        ' · ' + pad(o.getHours()) + ':' + pad(o.getMinutes()) + ':' + pad(o.getSeconds());
+      refs.tipUp.textContent = formatUptime(Date.now() - this.plugin.openedAt);
+    }
 
     /* `date`  →  fri 6 nov 20:59:47 ist 2026 */
     refs.date.textContent = [
