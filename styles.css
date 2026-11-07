@@ -62,7 +62,7 @@
   font-family: var(--vf-mono, "Mish Typewriter", ui-monospace, monospace), "Mish Symbols", "Symbols Nerd Font Mono";
   background: transparent;           /* no colour of its own: whatever the theme's sidebar is shows through */
   color: var(--vf-fg, #e8e8ed);
-  border: 1px solid var(--background-modifier-border, var(--vf-line, #2a2a2f));
+  border: 0;                         /* the rainbow ring below is the border */
   border-radius: 10px;
   padding: 12px 12px 10px;
   font-size: 12.5px;
@@ -77,6 +77,31 @@
   margin: auto;
   overflow: hidden;
   text-align: left;
+}
+
+/* thin rainbow border: a 1px gradient ring cut out with a mask, so the card
+   itself stays see-through. same colours as the rainbow scrollbar. */
+.vf::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    var(--vf-pink-hi, #ffa6c9),
+    var(--vf-peach, #ffd6a6),
+    var(--vf-yellow, #fff1a8),
+    var(--vf-green, #c9ffa6),
+    var(--vf-blue, #a6c9ff),
+    var(--vf-lilac, #c9b0ff)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 /* — powerline starship prompt — */
