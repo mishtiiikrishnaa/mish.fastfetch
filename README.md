@@ -12,35 +12,17 @@
 
 [what it shows](#what-it-shows) · [install](#install) · [use](#use) · [settings](#settings) · [privacy](#what-it-runs-on-your-computer) · [fonts](#fonts) · [faq](#faq)
 
-<!--
-HERO IMAGE: drag a png into any github issue or pull request comment box (do not submit it),
-copy the https://github.com/user-attachments/... link it makes, delete this comment, and put:
-
-<img src="THE-LINK" alt="the mish.fastfetch panel" width="420">
-
-no image file needs to live in this repository.
--->
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mishtiiikrishnaa/mish.fastfetch/main/docs/screenshots/panel.png" alt="the mish.fastfetch panel: a starship prompt above a fastfetch-style summary of the vault" width="460">
+</p>
 
 </div>
 
-live counts, your operating system, and how long obsidian has been open, drawn like a terminal. a sketch of what the panel draws (the real thing is coloured, with a row of palette swatches):
+live counts, your operating system, and how long obsidian has been open, drawn like a terminal.
 
-```text
- mishti   my-vault   18:13
-❯ fastfetch
-user      mishti@macbook
-os        macOS
-vault     ~/my-vault
-notes     128
-links     342
-folders   14
-files     171
-size      2.4 MB
-uptime    1 hour, 12 mins
-
-❯ date
-Sat Nov  7 18:13:05 2026
-```
+| prompt | rows | live |
+| --- | --- | --- |
+| powerline pills for your user, the vault and the time | user, os, vault, notes, links, folders, files, size, uptime | counts follow the vault by themselves |
 
 desktop only.
 
@@ -114,6 +96,10 @@ everything has a sensible default, and nothing needs configuring.
 - **prompt:** show or hide the user pill, the vault pill and the time pill.
 - **rows:** show or hide each fastfetch row, the colour swatches and the date line.
 - **appearance:** pick the font (see below).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mishtiiikrishnaa/mish.fastfetch/main/docs/screenshots/settings.png" alt="the mish.fastfetch settings page" width="640">
+</p>
 
 ## fonts
 
