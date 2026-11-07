@@ -382,7 +382,7 @@ class FetchView extends ItemView {
 
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { return 'fetch'; }
-  getIcon() { return 'terminal'; }
+  getIcon() { return 'cpu'; }
 
   async onOpen() {
     const root = this.contentEl;
@@ -828,7 +828,7 @@ module.exports = class MishFastfetch extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new FetchView(leaf, this));
 
     /* the class lets styles.css find our ribbon icon and give it the gradient */
-    const ribbon = this.addRibbonIcon('terminal', 'Open fetch', () => this.activate());
+    const ribbon = this.addRibbonIcon('cpu', 'Open fetch', () => this.activate());
     ribbon.addClass('mish-fetch-ribbon');
     this.addCommand({
       id: 'open-fetch',
