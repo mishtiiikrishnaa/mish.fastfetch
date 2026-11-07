@@ -17,8 +17,8 @@ try { nodeOs = require('os'); } catch (e) { nodeOs = null; }
 const ROWS = ['user', 'os', 'vault', 'notes', 'links', 'folders', 'files', 'size', 'uptime'];
 
 const ROW_NAMES = {
-  user: 'User', os: 'Operating system', vault: 'Vault path', notes: 'Notes', links: 'Links',
-  folders: 'Folders', files: 'Files', size: 'Size', uptime: 'Uptime',
+  user: 'user', os: 'operating system', vault: 'vault path', notes: 'notes', links: 'links',
+  folders: 'folders', files: 'files', size: 'size', uptime: 'uptime',
 };
 
 const DEFAULT_SETTINGS = {
@@ -678,7 +678,6 @@ class FetchSettingTab extends PluginSettingTab {
     containerEl.empty();
     const found = plugin.detected;
     const hints = Object.fromEntries(INFO);
-    const sentence = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
     const flag = (group, key, name, desc) => new Setting(containerEl)
       .setName(name)
@@ -691,11 +690,11 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     /* ── who you are ── */
-    new Setting(containerEl).setName('Identity').setHeading();
+    new Setting(containerEl).setName('identity').setHeading();
 
     new Setting(containerEl)
-      .setName('User name')
-      .setDesc('Shown in the first pill and the user row. Leave empty to use the name your system reports.')
+      .setName('user name')
+      .setDesc('shown in the first pill and the user row. leave empty to use the name your system reports.')
       .addText((text) => text
         .setPlaceholder(found.user)
         .setValue(s.username)
@@ -705,8 +704,8 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Host name')
-      .setDesc("Shown after the @ in the user row. Leave empty to use your computer's name.")
+      .setName('host name')
+      .setDesc("shown after the @ in the user row. leave empty to use your computer's name.")
       .addText((text) => text
         .setPlaceholder(found.host)
         .setValue(s.hostname)
@@ -716,8 +715,8 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Show full vault path')
-      .setDesc('Turn this off to show only the vault name, handy before taking a screenshot.')
+      .setName('show full vault path')
+      .setDesc('turn this off to show only the vault name, handy before taking a screenshot.')
       .addToggle((toggle) => toggle
         .setValue(s.showFullPath)
         .onChange(async (value) => {
@@ -726,25 +725,25 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     /* ── what the prompt shows ── */
-    new Setting(containerEl).setName('Prompt').setHeading();
-    flag('pills', 'user', 'User pill', 'Your name, with a logo for your operating system.');
-    flag('pills', 'vault', 'Vault pill', 'The name of this vault.');
-    flag('pills', 'time', 'Time pill', 'When Obsidian was opened. Hover it for the full date and uptime.');
+    new Setting(containerEl).setName('prompt').setHeading();
+    flag('pills', 'user', 'user pill', 'your name, with a logo for your operating system.');
+    flag('pills', 'vault', 'vault pill', 'the name of this vault.');
+    flag('pills', 'time', 'time pill', 'when obsidian was opened. hover it for the full date and uptime.');
 
     /* ── what the panel shows ── */
-    new Setting(containerEl).setName('Rows').setHeading();
-    ROWS.forEach((key) => flag('show', key, ROW_NAMES[key], sentence(hints[key])));
-    flag('show', 'swatches', 'Colour swatches', 'The strip of colour blocks under the rows.');
-    flag('show', 'date', 'Date line', 'The date line at the bottom of the panel.');
+    new Setting(containerEl).setName('rows').setHeading();
+    ROWS.forEach((key) => flag('show', key, ROW_NAMES[key], hints[key]));
+    flag('show', 'swatches', 'colour swatches', 'the strip of colour blocks under the rows.');
+    flag('show', 'date', 'date line', 'the date line at the bottom of the panel.');
 
     /* ── font ── */
-    new Setting(containerEl).setName('Appearance').setHeading();
+    new Setting(containerEl).setName('appearance').setHeading();
 
     const choices = () => {
       const opts = {
-        bundled: 'CMU Typewriter (bundled)',
-        obsidian: "Obsidian's monospace font",
-        system: 'System monospace',
+        bundled: 'cmu typewriter (bundled)',
+        obsidian: "obsidian's monospace font",
+        system: 'system monospace',
       };
       const names = new Set(CANDIDATE_FONTS.filter((n) => isInstalled(n)));
       this.scanned.forEach((n) => names.add(n));
@@ -752,15 +751,15 @@ class FetchSettingTab extends PluginSettingTab {
       Array.from(names)
         .sort((a, b) => a.localeCompare(b))
         .forEach((n) => { opts['family:' + n] = n; });
-      opts.custom = 'Custom…';
+      opts.custom = 'custom…';
       return opts;
     };
 
     let custom = null;
 
     new Setting(containerEl)
-      .setName('Font')
-      .setDesc('The default font is bundled with the plugin, so nothing needs installing. Or pick a monospace font from this computer.')
+      .setName('font')
+      .setDesc('the default font is bundled with the plugin, so nothing needs installing. or pick a monospace font from this computer.')
       .addDropdown((dropdown) => {
         this.fontDropdown = dropdown;
         dropdown
@@ -774,8 +773,8 @@ class FetchSettingTab extends PluginSettingTab {
       });
 
     custom = new Setting(containerEl)
-      .setName('Custom font')
-      .setDesc('Any CSS font-family list, such as "JetBrains Mono", monospace')
+      .setName('custom font')
+      .setDesc('any css font-family list, such as "JetBrains Mono", monospace')
       .addText((text) => text
         .setPlaceholder('"JetBrains Mono", monospace')
         .setValue(s.customFont)
@@ -786,25 +785,25 @@ class FetchSettingTab extends PluginSettingTab {
     custom.settingEl.hidden = s.font !== 'custom';
 
     new Setting(containerEl)
-      .setName('Find monospace fonts')
-      .setDesc("Adds every monospace font installed on this computer to the menu above. Obsidian may ask for permission first. If this version can't do it, the menu still lists the common fonts it finds.")
+      .setName('find monospace fonts')
+      .setDesc("adds every monospace font installed on this computer to the menu above. obsidian may ask for permission first. if this version can't do it, the menu still lists the common fonts it finds.")
       .addButton((button) => button
-        .setButtonText('Scan')
+        .setButtonText('scan')
         .onClick(async () => {
           button.setDisabled(true);
           try {
             const list = await scanSystemFonts();
             if (!list) {
-              new Notice("This version of Obsidian can't list system fonts. Use a custom font instead.");
+              new Notice("this version of obsidian can't list system fonts. use a custom font instead.");
             } else {
               this.scanned = list;
               this.fontDropdown.selectEl.empty();
               this.fontDropdown.addOptions(choices());
               this.fontDropdown.setValue(s.font);
-              new Notice('Found ' + list.length + ' monospace fonts.');
+              new Notice('found ' + list.length + ' monospace fonts.');
             }
           } catch (e) {
-            new Notice('Could not read the font list. Use a custom font instead.');
+            new Notice('could not read the font list. use a custom font instead.');
           }
           button.setDisabled(false);
         }));
