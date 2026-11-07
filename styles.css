@@ -69,10 +69,13 @@
   font-size: 12.5px;
   line-height: 1.5;
   letter-spacing: 0.005em;
-  /* fills the pane's width, so it's the same width as the mish-eza card
-     (both sit inside 10px of padding). a long vault path wraps if it has to. */
+  /* as wide as the starship prompt on the first line, and nothing else decides
+     it (see the contain rule below), so resizing the sidebar just moves the card
+     around instead of stretching it. a long vault path wraps if it has to.
+     the min-width is only a floor for when most of the prompt pills are off. */
   position: relative;            /* the hover card positions itself against this */
-  width: 100%;
+  width: fit-content;
+  min-width: min(100%, 28ch);
   max-width: 100%;
   flex: 0 0 auto;
   margin: auto;
@@ -105,12 +108,18 @@
   pointer-events: none;
 }
 
+/* every other line ignores its own content when the card works out its width,
+   so only the prompt decides it; they just fill the card (and ellipsise / wrap).
+   the hover tip is positioned absolutely and must keep its own width. */
+.vf > :not(.vf-bar):not(.vf-tip) { contain: inline-size; }
+
 /* — powerline starship prompt — */
 .vf-bar {
   display: flex;
   justify-content: flex-start;
   align-items: center;
   flex-wrap: nowrap;
+  width: max-content;          /* its natural width is what sizes the card */
   min-width: 0;
   max-width: 100%;
   margin: 0 0 8px;
