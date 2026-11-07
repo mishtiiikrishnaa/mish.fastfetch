@@ -6,7 +6,117 @@
    uptime = time since obsidian was opened.
    ═══════════════════════════════════════════════════════════════════════ */
 
-const { Plugin, ItemView } = require('obsidian');
+const { Plugin, ItemView, PluginSettingTab, Setting, Notice, Platform, FileSystemAdapter } = require('obsidian');
+
+/* node's `os` module is how the panel finds your username and hostname.
+   it only exists on desktop, which is why the manifest says isDesktopOnly. */
+let nodeOs = null;
+try { nodeOs = require('os'); } catch (e) { nodeOs = null; }
+
+/* the fastfetch rows, in order */
+const ROWS = ['user', 'os', 'vault', 'notes', 'links', 'folders', 'files', 'size', 'uptime'];
+
+const ROW_NAMES = {
+  user: 'User', os: 'Operating system', vault: 'Vault path', notes: 'Notes', links: 'Links',
+  folders: 'Folders', files: 'Files', size: 'Size', uptime: 'Uptime',
+};
+
+const DEFAULT_SETTINGS = {
+  username: '',          /* empty = auto-detect */
+  hostname: '',          /* empty = auto-detect */
+  showFullPath: true,
+  font: 'bundled',       /* bundled | obsidian | system | family:<name> | custom */
+  customFont: '',
+  pills: { user: true, vault: true, time: true },
+  show: {
+    user: true, os: true, vault: true, notes: true, links: true, folders: true,
+    files: true, size: true, uptime: true, swatches: true, date: true,
+  },
+};
+
+/* who and where, as the operating system reports it */
+const detectIdentity = () => {
+  let user = 'user';
+  let host = 'localhost';
+  try { user = nodeOs.userInfo().username || user; } catch (e) { /* keep the fallback */ }
+  try { host = nodeOs.hostname().replace(/\.local$/i, '') || host; } catch (e) { /* keep the fallback */ }
+  return { user: user.toLowerCase(), host: host.toLowerCase() };
+};
+
+const osLabel = () => {
+  if (Platform.isMacOS) return 'macOS';
+  if (Platform.isWin) return 'windows';
+  if (Platform.isLinux) return 'linux';
+  return 'unknown';
+};
+
+/* nerd font logos: apple / windows / linux */
+const osGlyph = () => {
+  if (Platform.isMacOS) return '\uF179';
+  if (Platform.isWin) return '\uF17A';
+  return '\uF17C';
+};
+
+/* ── fonts ───────────────────────────────────────────────────────────────
+   the panel ships its own typewriter face (embedded in styles.css), so the
+   default needs nothing installed. the settings can swap it for a font from
+   the user's own machine. */
+
+/* well-known monospace fonts, checked quietly with no permission needed */
+const CANDIDATE_FONTS = [
+  'SF Mono', 'Menlo', 'Monaco', 'Andale Mono', 'Consolas', 'Lucida Console', 'Cascadia Code',
+  'Cascadia Mono', 'Courier New', 'JetBrains Mono', 'Fira Code', 'Fira Mono', 'Source Code Pro',
+  'IBM Plex Mono', 'Roboto Mono', 'Hack', 'Inconsolata', 'Ubuntu Mono', 'DejaVu Sans Mono',
+  'Liberation Mono', 'Noto Sans Mono', 'Iosevka', 'Victor Mono', 'Space Mono', 'CMU Typewriter Text',
+  'MesloLGS NF',
+];
+
+const quoteFont = (name) => '"' + String(name).replace(/["\\]/g, '') + '"';
+
+let measureCtx = null;
+const textWidth = (family, text) => {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = '64px ' + family;
+  return measureCtx.measureText(text).width;
+};
+
+/* installed = drawing with it differs from every plain fallback */
+const isInstalled = (name) => ['monospace', 'serif', 'sans-serif'].some(
+  (base) => textWidth(quoteFont(name) + ', ' + base, 'mmmmmmmmmmlli') !== textWidth(base, 'mmmmmmmmmmlli')
+);
+
+/* monospace = narrow and wide letters take the same room */
+const isMono = (name) => {
+  const f = quoteFont(name) + ', monospace';
+  return Math.abs(textWidth(f, 'iiiiiiiiii') - textWidth(f, 'mmmmmmmmmm')) < 0.5 &&
+    Math.abs(textWidth(f, 'llllllllll') - textWidth(f, 'WWWWWWWWWW')) < 0.5;
+};
+
+/* asks chromium for every installed family (it may ask permission first) and
+   keeps the monospace ones. returns null when this version can't do it. */
+const scanSystemFonts = async () => {
+  if (typeof window.queryLocalFonts !== 'function') return null;
+  const fonts = await window.queryLocalFonts();
+  const families = Array.from(new Set(fonts.map((f) => f.family)));
+  return families
+    .filter((name) => !/symbols|emoji|icons|dingbats|wingdings|webdings/i.test(name))
+    .filter((name) => isInstalled(name) && isMono(name))
+    .sort((a, b) => a.localeCompare(b));
+};
+
+/* the font-family to put in --vf-mono, or null to leave the css default
+   (the bundled face, or whatever a theme sets) alone */
+const fontStack = (cfg) => {
+  switch (cfg.font) {
+    case 'obsidian': return 'var(--font-monospace), ui-monospace, monospace';
+    case 'system': return 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    case 'custom': return cfg.customFont.trim() || null;
+    default:
+      return cfg.font.indexOf('family:') === 0
+        ? quoteFont(cfg.font.slice(7)) + ', ui-monospace, monospace'
+        : null;
+  }
+};
 
 const VIEW_TYPE = 'tv-fetch-view';
 
@@ -104,7 +214,7 @@ const fitBar = (bar, watch) => {
   watch.forEach((node) => ro.observe(node));
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
   schedule();
-  return schedule;
+  return () => ro.disconnect();
 };
 
 /* ── rainbow scrollbar ──────────────────────────────────────────────────
@@ -205,16 +315,16 @@ const formatUptime = (ms) => {
 
 /* ── starship-style powerline prompt ─────────────────────────────────── */
 
-const buildPrompt = (vaultName) => {
+const buildPrompt = (vaultName, user, pills) => {
   const bar = el('div', 'vf-bar');
-  const segs = [
-    ['vf-user', '\uF179 mishti'],
-    ['vf-path', '~/' + vaultName],
-    ['vf-ch vf-ch1', ''],
-    ['vf-ch vf-ch2', ''],
-    ['vf-ch vf-ch3', ''],
-    ['vf-clock', ''],
-  ];
+  const segs = [];
+  if (pills.user) segs.push(['vf-user', osGlyph() + ' ' + user]);
+  if (pills.vault) segs.push(['vf-path', '~/' + vaultName]);
+  if (pills.time) {
+    /* the chevrons only make sense as a bridge to the time pill */
+    if (pills.user || pills.vault) segs.push(['vf-ch vf-ch1', ''], ['vf-ch vf-ch2', ''], ['vf-ch vf-ch3', '']);
+    segs.push(['vf-clock', '']);
+  }
 
   const nodes = segs.map(([cls, text], i) => {
     const seg = el('span', 'vf-seg ' + cls, text);
@@ -223,7 +333,9 @@ const buildPrompt = (vaultName) => {
     return seg;
   });
 
-  return { bar, clock: nodes[nodes.length - 1] };
+  const find = (cls) => nodes.find((n) => n.classList.contains(cls)) || null;
+  bar.hidden = nodes.length === 0;
+  return { bar, user: find('vf-user'), clock: find('vf-clock') };
 };
 
 const buildCmd = (exe, args, cursor) => {
@@ -303,18 +415,21 @@ class FetchView extends ItemView {
 
   async onClose() {
     window.clearTimeout(this.refreshTimer);
+    if (this.refs.disposeFit) this.refs.disposeFit();
   }
 
   /* ── drawing ─────────────────────────────────────────────────────── */
 
   paint(card, scroll) {
     const refs = this.refs;
+    refs.card = card;
+    refs.scroll = scroll;
+    refs.rowEls = {};
+    refs.infoEls = {};
+    const who = this.plugin.identity();
 
-    /* prompt + fastfetch */
-    const prompt = buildPrompt(this.app.vault.getName());
-    refs.clock = prompt.clock;
-    card.appendChild(prompt.bar);
-    fitBar(prompt.bar, [card, scroll]);   /* keeps the full vault name on screen */
+    /* prompt + fastfetch (the prompt is redrawn whenever the pill toggles change) */
+    this.drawPrompt();
     card.appendChild(buildCmd('fastfetch'));
 
     /* hover card for the time pill (a native tooltip can't show here: the pill
@@ -330,22 +445,8 @@ class FetchView extends ItemView {
     card.appendChild(tip);
     refs.tip = tip;
 
-    const showTip = () => {
-      this.tick();
-      tip.hidden = false;
-      const c = card.getBoundingClientRect();
-      const p = refs.clock.getBoundingClientRect();
-      const w = tip.offsetWidth;
-      let left = p.right - c.left - w;                       /* right edges line up */
-      left = Math.max(8, Math.min(left, c.width - w - 8));   /* stay inside the card */
-      tip.style.left = left + 'px';
-      tip.style.top = (p.bottom - c.top + 6) + 'px';
-    };
-    refs.clock.addEventListener('mouseenter', showTip);
-    refs.clock.addEventListener('mouseleave', () => { tip.hidden = true; });
-    refs.clock.classList.add('vf-hover');
-
     const rows = el('div', 'vf-rows');
+    refs.rowsEl = rows;
     const hints = Object.fromEntries(INFO);
     const row = (key, cls) => {
       const k = el('div', 'vf-k', key);
@@ -353,15 +454,16 @@ class FetchView extends ItemView {
       rows.appendChild(k);
       const value = el('div', 'vf-v ' + (cls || ''));
       rows.appendChild(value);
+      refs.rowEls[key] = [k, value];
       return value;
     };
 
-    row('user', 'p').textContent = 'mishti@macbook';
-    row('os', 'd').textContent = 'macOS · obsidian';
+    refs.userRow = row('user', 'p');
+    refs.userRow.textContent = who.user + '@' + who.host;
+    row('os', 'd').textContent = osLabel() + ' · obsidian';
     refs.vault = row('vault', 'h');
     /* the full path is long: let it wrap so the vault name at the end stays visible */
-    refs.vault.style.whiteSpace = 'normal';
-    refs.vault.style.overflowWrap = 'anywhere';
+    refs.vault.addClass('vf-wrap');
     refs.notes = row('notes', 'g');
     refs.links = row('links', 'b');
     refs.folders = row('folders', 'c');
@@ -374,9 +476,11 @@ class FetchView extends ItemView {
     const swatches = el('div', 'vf-swatches');
     for (let i = 0; i < 8; i++) swatches.appendChild(el('span'));
     card.appendChild(swatches);
+    refs.swatches = swatches;
 
-    /* macOS date commands */
-    card.appendChild(buildCmd('date'));
+    /* the date line: drawn text, nothing is executed */
+    refs.dateCmd = buildCmd('date');
+    card.appendChild(refs.dateCmd);
     refs.date = el('div', 'vf-out b');
     card.appendChild(refs.date);
 
@@ -386,8 +490,11 @@ class FetchView extends ItemView {
     info.appendChild(buildCmd('fastfetch', '--info'));
     const grid = el('div', 'vf-info-grid');
     INFO.forEach(([key, text]) => {
-      grid.appendChild(el('div', 'vf-k', key));
-      grid.appendChild(el('div', 'vf-info-d', text));
+      const k = el('div', 'vf-k', key);
+      const d = el('div', 'vf-info-d', text);
+      grid.appendChild(k);
+      grid.appendChild(d);
+      refs.infoEls[key] = [k, d];
     });
     info.appendChild(grid);
     card.appendChild(info);
@@ -403,6 +510,84 @@ class FetchView extends ItemView {
     });
     last.appendChild(btn);
     card.appendChild(last);
+
+    this.applyFont();
+    this.applyVisibility();
+  }
+
+  /* the powerline bar, built from the pill toggles; safe to call again */
+  drawPrompt() {
+    const { refs, plugin } = this;
+    const who = plugin.identity();
+
+    if (refs.disposeFit) refs.disposeFit();
+    const prompt = buildPrompt(this.app.vault.getName(), who.user, plugin.settings.pills);
+    if (refs.bar) refs.bar.replaceWith(prompt.bar);
+    else refs.card.prepend(prompt.bar);
+    refs.bar = prompt.bar;
+    refs.clock = prompt.clock;
+    refs.disposeFit = fitBar(prompt.bar, [refs.card, refs.scroll]);   /* keeps the full vault name on screen */
+
+    if (refs.tip) refs.tip.hidden = true;
+    if (refs.clock) {
+      refs.clock.classList.add('vf-hover');
+      refs.clock.addEventListener('mouseenter', () => this.showTip());
+      refs.clock.addEventListener('mouseleave', () => { refs.tip.hidden = true; });
+    }
+  }
+
+  showTip() {
+    const { refs } = this;
+    if (!refs.clock || !refs.tip) return;
+    this.tick();
+    refs.tip.hidden = false;
+    const c = refs.card.getBoundingClientRect();
+    const p = refs.clock.getBoundingClientRect();
+    const w = refs.tip.offsetWidth;
+    let left = p.right - c.left - w;                       /* right edges line up */
+    left = Math.max(8, Math.min(left, c.width - w - 8));   /* stay inside the card */
+    refs.tip.style.left = left + 'px';
+    refs.tip.style.top = (p.bottom - c.top + 6) + 'px';
+  }
+
+  /* font choice: sets --vf-mono on the card, or clears it for the default */
+  applyFont() {
+    const stack = fontStack(this.plugin.settings);
+    if (stack) this.refs.card.style.setProperty('--vf-mono', stack);
+    else this.refs.card.style.removeProperty('--vf-mono');
+  }
+
+  /* row and section toggles */
+  applyVisibility() {
+    const { refs } = this;
+    const { show, pills } = this.plugin.settings;
+    let anyRow = false;
+
+    ROWS.forEach((key) => {
+      const on = Boolean(show[key]);
+      anyRow = anyRow || on;
+      refs.rowEls[key].forEach((n) => { n.hidden = !on; });
+      refs.infoEls[key].forEach((n) => { n.hidden = !on; });
+    });
+    refs.rowsEl.hidden = !anyRow;
+    refs.swatches.hidden = !show.swatches;
+    refs.dateCmd.hidden = !show.date;
+    refs.date.hidden = !show.date;
+    refs.infoEls.date.forEach((n) => { n.hidden = !show.date; });
+    refs.infoEls.pills.forEach((n) => { n.hidden = !(pills.user || pills.vault || pills.time); });
+  }
+
+  /* settings changed: redraw what depends on them, in place */
+  applySettings() {
+    const { refs, plugin } = this;
+    if (!refs.card) return;
+    const who = plugin.identity();
+    this.drawPrompt();
+    refs.userRow.textContent = who.user + '@' + who.host;
+    this.applyFont();
+    this.applyVisibility();
+    this.refresh();
+    this.tick();
   }
 
   /* ── numbers ─────────────────────────────────────────────────────── */
@@ -432,7 +617,7 @@ class FetchView extends ItemView {
       .length;
 
     const adapter = app.vault.adapter;
-    refs.vault.textContent = adapter && typeof adapter.getBasePath === 'function'
+    refs.vault.textContent = this.plugin.settings.showFullPath && adapter instanceof FileSystemAdapter
       ? adapter.getBasePath()
       : app.vault.getName();
     refs.notes.textContent = notes.toLocaleString();
@@ -446,7 +631,7 @@ class FetchView extends ItemView {
 
   tick() {
     const refs = this.refs;
-    if (!refs.clock) return;
+    if (!refs.date) return;
 
     const d = new Date();
     const hms = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
@@ -458,7 +643,7 @@ class FetchView extends ItemView {
     const sameDay = o.toDateString() === d.toDateString();
     const label = '\uF43A ' + (sameDay ? '' : o.getDate() + ' ' + MONTHS[o.getMonth()] + ' ') +
       pad(o.getHours()) + ':' + pad(o.getMinutes());
-    if (refs.clock.textContent !== label) refs.clock.textContent = label;
+    if (refs.clock && refs.clock.textContent !== label) refs.clock.textContent = label;
 
     if (refs.tip && !refs.tip.hidden) {
       refs.tipOpened.textContent = DAYS[o.getDay()] + ' ' + o.getDate() + ' ' + MONTHS[o.getMonth()] +
@@ -480,14 +665,164 @@ class FetchView extends ItemView {
   }
 }
 
-module.exports = class TerminalVaultFetch extends Plugin {
+class FetchSettingTab extends PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+    this.scanned = [];
+  }
+
+  display() {
+    const { containerEl, plugin } = this;
+    const s = plugin.settings;
+    containerEl.empty();
+    const found = plugin.detected;
+    const hints = Object.fromEntries(INFO);
+    const sentence = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+    const flag = (group, key, name, desc) => new Setting(containerEl)
+      .setName(name)
+      .setDesc(desc || '')
+      .addToggle((toggle) => toggle
+        .setValue(Boolean(s[group][key]))
+        .onChange(async (value) => {
+          s[group][key] = value;
+          await plugin.saveSettings();
+        }));
+
+    /* ── who you are ── */
+    new Setting(containerEl).setName('Identity').setHeading();
+
+    new Setting(containerEl)
+      .setName('User name')
+      .setDesc('Shown in the first pill and the user row. Leave empty to use the name your system reports.')
+      .addText((text) => text
+        .setPlaceholder(found.user)
+        .setValue(s.username)
+        .onChange(async (value) => {
+          s.username = value.trim();
+          await plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Host name')
+      .setDesc("Shown after the @ in the user row. Leave empty to use your computer's name.")
+      .addText((text) => text
+        .setPlaceholder(found.host)
+        .setValue(s.hostname)
+        .onChange(async (value) => {
+          s.hostname = value.trim();
+          await plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Show full vault path')
+      .setDesc('Turn this off to show only the vault name, handy before taking a screenshot.')
+      .addToggle((toggle) => toggle
+        .setValue(s.showFullPath)
+        .onChange(async (value) => {
+          s.showFullPath = value;
+          await plugin.saveSettings();
+        }));
+
+    /* ── what the prompt shows ── */
+    new Setting(containerEl).setName('Prompt').setHeading();
+    flag('pills', 'user', 'User pill', 'Your name, with a logo for your operating system.');
+    flag('pills', 'vault', 'Vault pill', 'The name of this vault.');
+    flag('pills', 'time', 'Time pill', 'When Obsidian was opened. Hover it for the full date and uptime.');
+
+    /* ── what the panel shows ── */
+    new Setting(containerEl).setName('Rows').setHeading();
+    ROWS.forEach((key) => flag('show', key, ROW_NAMES[key], sentence(hints[key])));
+    flag('show', 'swatches', 'Colour swatches', 'The strip of colour blocks under the rows.');
+    flag('show', 'date', 'Date line', 'The date line at the bottom of the panel.');
+
+    /* ── font ── */
+    new Setting(containerEl).setName('Appearance').setHeading();
+
+    const choices = () => {
+      const opts = {
+        bundled: 'CMU Typewriter (bundled)',
+        obsidian: "Obsidian's monospace font",
+        system: 'System monospace',
+      };
+      const names = new Set(CANDIDATE_FONTS.filter((n) => isInstalled(n)));
+      this.scanned.forEach((n) => names.add(n));
+      if (s.font.indexOf('family:') === 0) names.add(s.font.slice(7));
+      Array.from(names)
+        .sort((a, b) => a.localeCompare(b))
+        .forEach((n) => { opts['family:' + n] = n; });
+      opts.custom = 'Custom…';
+      return opts;
+    };
+
+    let custom = null;
+
+    new Setting(containerEl)
+      .setName('Font')
+      .setDesc('The default font is bundled with the plugin, so nothing needs installing. Or pick a monospace font from this computer.')
+      .addDropdown((dropdown) => {
+        this.fontDropdown = dropdown;
+        dropdown
+          .addOptions(choices())
+          .setValue(s.font)
+          .onChange(async (value) => {
+            s.font = value;
+            if (custom) custom.settingEl.hidden = value !== 'custom';
+            await plugin.saveSettings();
+          });
+      });
+
+    custom = new Setting(containerEl)
+      .setName('Custom font')
+      .setDesc('Any CSS font-family list, such as "JetBrains Mono", monospace')
+      .addText((text) => text
+        .setPlaceholder('"JetBrains Mono", monospace')
+        .setValue(s.customFont)
+        .onChange(async (value) => {
+          s.customFont = value;
+          await plugin.saveSettings();
+        }));
+    custom.settingEl.hidden = s.font !== 'custom';
+
+    new Setting(containerEl)
+      .setName('Find monospace fonts')
+      .setDesc("Adds every monospace font installed on this computer to the menu above. Obsidian may ask for permission first. If this version can't do it, the menu still lists the common fonts it finds.")
+      .addButton((button) => button
+        .setButtonText('Scan')
+        .onClick(async () => {
+          button.setDisabled(true);
+          try {
+            const list = await scanSystemFonts();
+            if (!list) {
+              new Notice("This version of Obsidian can't list system fonts. Use a custom font instead.");
+            } else {
+              this.scanned = list;
+              this.fontDropdown.selectEl.empty();
+              this.fontDropdown.addOptions(choices());
+              this.fontDropdown.setValue(s.font);
+              new Notice('Found ' + list.length + ' monospace fonts.');
+            }
+          } catch (e) {
+            new Notice('Could not read the font list. Use a custom font instead.');
+          }
+          button.setDisabled(false);
+        }));
+  }
+}
+
+module.exports = class MishFastfetch extends Plugin {
   async onload() {
+    await this.loadSettings();
+    this.detected = detectIdentity();
+
     /* the renderer's time origin is when this obsidian window started */
     this.openedAt = (typeof performance !== 'undefined' && performance.timeOrigin)
       ? performance.timeOrigin
       : Date.now();
 
     mountRainbow();
+    this.addSettingTab(new FetchSettingTab(this.app, this));
 
     this.registerView(VIEW_TYPE, (leaf) => new FetchView(leaf, this));
 
@@ -511,6 +846,33 @@ module.exports = class TerminalVaultFetch extends Plugin {
 
   onunload() {
     unmountRainbow();
+  }
+
+  async loadSettings() {
+    const saved = (await this.loadData()) || {};
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved, {
+      pills: Object.assign({}, DEFAULT_SETTINGS.pills, saved.pills),
+      show: Object.assign({}, DEFAULT_SETTINGS.show, saved.show),
+    });
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+    this.refreshViews();
+  }
+
+  /* what the settings say, falling back to what the system says */
+  identity() {
+    return {
+      user: this.settings.username || this.detected.user,
+      host: this.settings.hostname || this.detected.host,
+    };
+  }
+
+  refreshViews() {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view instanceof FetchView) leaf.view.applySettings();
+    });
   }
 
   async activate() {

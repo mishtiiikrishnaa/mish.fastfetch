@@ -1,10 +1,10 @@
 {
-  "id": "mish.fastfetch",
+  "id": "mish-fastfetch",
   "name": "mish.fastfetch",
-  "version": "1.4.0",
+  "version": "1.0.0",
   "minAppVersion": "1.5.0",
-  "description": "starship prompt and fastfetch panel (with the full vault path), live.",
+  "description": "Show a starship-style prompt and a fastfetch-style summary of your vault in the sidebar, with live counts and uptime.",
   "author": "mishti",
-  "authorUrl": "",
-  "isDesktopOnly": false
+  "authorUrl": "https://github.com/mishtiiikrishnaa",
+  "isDesktopOnly": true
 }
