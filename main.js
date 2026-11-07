@@ -11,11 +11,8 @@ const { Plugin, ItemView } = require('obsidian');
 const VIEW_TYPE = 'tv-fetch-view';
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const DAYS_LONG = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
                 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-const MONTHS_LONG = ['january', 'february', 'march', 'april', 'may', 'june',
-                     'july', 'august', 'september', 'october', 'november', 'december'];
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -165,6 +162,9 @@ class FetchView extends ItemView {
     row('user', 'p').textContent = 'mishti@macbook';
     row('os', 'd').textContent = 'macOS · obsidian';
     refs.vault = row('vault', 'h');
+    /* the full path is long: let it wrap so the vault name at the end stays visible */
+    refs.vault.style.whiteSpace = 'normal';
+    refs.vault.style.overflowWrap = 'anywhere';
     refs.notes = row('notes', 'g');
     refs.links = row('links', 'b');
     refs.folders = row('folders', 'c');
@@ -182,10 +182,6 @@ class FetchView extends ItemView {
     card.appendChild(buildCmd('date'));
     refs.date = el('div', 'vf-out b');
     card.appendChild(refs.date);
-
-    card.appendChild(buildCmd('date', '"+%A, %d %B %Y"'));
-    refs.dateLong = el('div', 'vf-out p');
-    card.appendChild(refs.dateLong);
 
     /* fresh prompt, blinking cursor */
     card.appendChild(buildCmd('', '', true));
@@ -217,7 +213,10 @@ class FetchView extends ItemView {
       .filter((item) => Array.isArray(item.children) && item.path !== '/')
       .length;
 
-    refs.vault.textContent = app.vault.getName();
+    const adapter = app.vault.adapter;
+    refs.vault.textContent = adapter && typeof adapter.getBasePath === 'function'
+      ? adapter.getBasePath()
+      : app.vault.getName();
     refs.notes.textContent = notes.toLocaleString();
     refs.links.textContent = links.toLocaleString();
     refs.folders.textContent = folders.toLocaleString();
@@ -242,11 +241,6 @@ class FetchView extends ItemView {
       DAYS[d.getDay()], d.getDate(), MONTHS[d.getMonth()],
       hms, tzName(d), d.getFullYear(),
     ].filter(Boolean).join(' ');
-
-    /* `date "+%A, %d %B %Y"`  →  friday, 06 november 2026 */
-    refs.dateLong.textContent =
-      DAYS_LONG[d.getDay()] + ', ' + pad(d.getDate()) + ' ' +
-      MONTHS_LONG[d.getMonth()] + ' ' + d.getFullYear();
 
     /* time since obsidian was opened */
     refs.uptime.textContent = formatUptime(Date.now() - this.plugin.openedAt);
