@@ -3,8 +3,23 @@
    colours come from the theme, with fallbacks.
    ═══════════════════════════════════════════════════════════════════════ */
 
-.tv-root {
+/* the view's content area doesn't scroll itself: .tv-scroll inside it does, and
+   centres the card in whatever room the pane has, however it's resized */
+.workspace-leaf-content[data-type="tv-fetch-view"] .tv-root {
+  position: relative;
+  display: flex;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.tv-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;                 /* margin:auto on the card centres it both ways */
   padding: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .vf,
@@ -20,7 +35,12 @@
   font-size: 12.5px;
   line-height: 1.5;
   letter-spacing: 0.005em;
-  width: 100%;
+  /* hugs its content, so the full vault path always fits on one line; only
+     shrinks (and wraps the path) when the pane is genuinely narrower */
+  width: max-content;
+  max-width: 100%;
+  flex: 0 0 auto;
+  margin: auto;
   overflow: hidden;
   text-align: left;
 }
@@ -71,11 +91,15 @@
 .vf-user  { background: var(--vf-pink-hi, #ffa6c9); }
 .vf-path  {
   display: block;
+  flex: 0 0 auto;              /* the full vault name always shows; main.js scales the bar to fit */
+  background: var(--vf-peach, #ffd6a6);
+}
+/* only below half size does the name start to ellipsise */
+.vf-bar.is-squeezed .vf-path {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  background: var(--vf-peach, #ffd6a6);
 }
 .vf-clock { background: var(--vf-lilac, #c9b0ff); }
 
@@ -186,20 +210,31 @@
   filter: brightness(1.2);
 }
 
-/* ═══ thin rainbow scrollbar for the fetch panel ═══ */
+/* ═══ thin rainbow scrollbar for the fetch panel ═══
+   the native scrollbar is hidden and main.js draws a 3px rainbow thumb
+   (.tv-sb), because themes / snippets keep overriding native scrollbars. */
 
-.tv-root::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+.tv-scroll { scrollbar-width: none !important; }
+.tv-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
-.tv-root::-webkit-scrollbar-track,
-.tv-root::-webkit-scrollbar-corner {
-  background: transparent;
+
+/* an 8px strip you can grab; the visible thumb inside is 3px */
+.tv-sb {
+  position: absolute;
+  right: 0;
+  width: 8px;
+  z-index: 5;
+  display: none;
 }
-.tv-root::-webkit-scrollbar-thumb,
-.tv-root::-webkit-scrollbar-thumb:hover {
-  border: none;
-  border-radius: 4px;
+.tv-sb-thumb {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 3px;
+  border-radius: 3px;
   background: linear-gradient(
     180deg,
     var(--vf-pink-hi, #ffa6c9),

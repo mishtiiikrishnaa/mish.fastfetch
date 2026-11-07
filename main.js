@@ -74,6 +74,100 @@ const unmountRainbow = () => {
   else svg.dataset.users = String(left);
 };
 
+/* ── keep the whole vault name visible ───────────────────────────────────
+   the orange path pill never truncates. when the prompt is wider than the
+   room it has, the whole bar is scaled down just enough to fit (css zoom),
+   and is re-fitted whenever the pane resizes. only below half size does the
+   pill start to ellipsise instead. */
+const fitBar = (bar, watch) => {
+  const FLOOR = 0.5;
+  let queued = false;
+
+  const fit = () => {
+    bar.classList.remove('is-squeezed');
+    bar.style.zoom = '';                       /* measure at natural size */
+    const have = bar.clientWidth;
+    const need = bar.scrollWidth;
+    if (!have || need <= have) return;         /* fits (or is hidden): leave it alone */
+    let k = have / need;
+    if (k < FLOOR) { k = FLOOR; bar.classList.add('is-squeezed'); }
+    bar.style.zoom = String(k);
+  };
+
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; fit(); });
+  };
+
+  const ro = new ResizeObserver(schedule);
+  watch.forEach((node) => ro.observe(node));
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
+  schedule();
+  return schedule;
+};
+
+/* ── rainbow scrollbar ──────────────────────────────────────────────────
+   the native scrollbar is hidden (see styles.css) and this draws a thin
+   rainbow thumb in its place, so it looks the same whatever theme or snippet
+   is styling scrollbars. wheel / trackpad scrolling is untouched; the thumb
+   can also be dragged. the scroller's parent must be position: relative. */
+const rainbowBar = (scroller) => {
+  const parent = scroller.parentElement;
+  const sb = el('div', 'tv-sb');
+  const thumb = el('div', 'tv-sb-thumb');
+  sb.appendChild(thumb);
+  parent.appendChild(sb);
+
+  const update = () => {
+    const { scrollHeight, clientHeight, scrollTop, offsetTop, offsetHeight } = scroller;
+    if (!offsetHeight || scrollHeight <= clientHeight + 1) {
+      sb.style.display = 'none';
+      return;
+    }
+    sb.style.display = 'block';
+    sb.style.top = offsetTop + 'px';
+    sb.style.height = clientHeight + 'px';
+    const h = Math.max(24, (clientHeight * clientHeight) / scrollHeight);
+    const y = (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - h);
+    thumb.style.height = h + 'px';
+    thumb.style.transform = 'translateY(' + y + 'px)';
+  };
+
+  let queued = false;
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; update(); });
+  };
+
+  scroller.addEventListener('scroll', schedule, { passive: true });
+  new ResizeObserver(schedule).observe(scroller);
+  new MutationObserver(schedule).observe(scroller, { childList: true, subtree: true, characterData: true });
+
+  /* drag the thumb */
+  sb.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startTop = scroller.scrollTop;
+    const ratio = (scroller.scrollHeight - scroller.clientHeight) /
+      Math.max(1, scroller.clientHeight - thumb.offsetHeight);
+    sb.setPointerCapture(e.pointerId);
+    const move = (ev) => { scroller.scrollTop = startTop + (ev.clientY - startY) * ratio; };
+    const up = () => {
+      sb.removeEventListener('pointermove', move);
+      sb.removeEventListener('pointerup', up);
+      sb.removeEventListener('pointercancel', up);
+    };
+    sb.addEventListener('pointermove', move);
+    sb.addEventListener('pointerup', up);
+    sb.addEventListener('pointercancel', up);
+  });
+
+  schedule();
+};
+
 const human = (bytes) => {
   if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' gb';
   if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' mb';
@@ -166,9 +260,14 @@ class FetchView extends ItemView {
     root.empty();
     root.addClass('tv-root');
 
+    /* .tv-scroll scrolls and centres the card; the rainbow thumb lives beside it */
+    const scroll = el('div', 'tv-scroll');
+    root.appendChild(scroll);
+
     const card = el('div', 'vf');
-    root.appendChild(card);
-    this.paint(card);
+    scroll.appendChild(card);
+    this.paint(card, scroll);
+    rainbowBar(scroll);
 
     this.refresh();
     this.tick();
@@ -193,13 +292,14 @@ class FetchView extends ItemView {
 
   /* ── drawing ─────────────────────────────────────────────────────── */
 
-  paint(card) {
+  paint(card, scroll) {
     const refs = this.refs;
 
     /* prompt + fastfetch */
     const prompt = buildPrompt(this.app.vault.getName());
     refs.clock = prompt.clock;
     card.appendChild(prompt.bar);
+    fitBar(prompt.bar, [card, scroll]);   /* keeps the full vault name on screen */
     card.appendChild(buildCmd('fastfetch'));
 
     const rows = el('div', 'vf-rows');
