@@ -165,7 +165,7 @@ const mountRainbow = () => {
     stops.forEach(([name, fallback], i) => {
       const stop = document.createElementNS(NS, 'stop');
       stop.setAttribute('offset', String(i / (stops.length - 1)));
-      stop.style.stopColor = 'var(' + name + ', ' + fallback + ')';
+      stop.style.stopColor = 'var(' + name + ', var(' + name.replace('--vf-', '--mz-') + ', ' + fallback + '))';
       grad.appendChild(stop);
     });
 
