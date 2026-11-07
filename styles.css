@@ -68,10 +68,10 @@
   font-size: 12.5px;
   line-height: 1.5;
   letter-spacing: 0.005em;
-  /* hugs its content, so the full vault path always fits on one line; only
-     shrinks (and wraps the path) when the pane is genuinely narrower */
+  /* fills the pane's width, so it's the same width as the mish-eza card
+     (both sit inside 10px of padding). a long vault path wraps if it has to. */
   position: relative;            /* the hover card positions itself against this */
-  width: max-content;
+  width: 100%;
   max-width: 100%;
   flex: 0 0 auto;
   margin: auto;
