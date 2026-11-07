@@ -1,12 +1,46 @@
+<div align="center">
+
 # mish.fastfetch
 
-a starship-style powerline prompt and a `fastfetch`-style summary of your vault, living in the [obsidian](https://obsidian.md) sidebar.
+**a starship prompt and a `fastfetch` summary of your vault, in the obsidian sidebar.**
+
+![release](https://img.shields.io/github/v/release/mishtiiikrishnaa/mish.fastfetch?style=flat-square&color=ffa6c9&labelColor=1a1a1a)
+![licence](https://img.shields.io/github/license/mishtiiikrishnaa/mish.fastfetch?style=flat-square&color=ffa6c9&labelColor=1a1a1a)
+![obsidian](https://img.shields.io/badge/obsidian-1.5.0%2B-ffa6c9?style=flat-square&labelColor=1a1a1a)
+![desktop only](https://img.shields.io/badge/desktop-only-ffa6c9?style=flat-square&labelColor=1a1a1a)
+![network](https://img.shields.io/badge/network-none-ffa6c9?style=flat-square&labelColor=1a1a1a)
+
+[what it shows](#what-it-shows) · [install](#install) · [use](#use) · [settings](#settings) · [privacy](#what-it-runs-on-your-computer) · [fonts](#fonts) · [faq](#faq)
 
 <!--
-screenshot: drag a png into any github issue or pull request comment box (do not submit it), copy the
-https://github.com/user-attachments/... link it makes, and paste it on the next line as ![the panel](that-link)
+HERO IMAGE: drag a png into any github issue or pull request comment box (do not submit it),
+copy the https://github.com/user-attachments/... link it makes, delete this comment, and put:
+
+<img src="THE-LINK" alt="the mish.fastfetch panel" width="420">
+
 no image file needs to live in this repository.
 -->
+
+</div>
+
+live counts, your operating system, and how long obsidian has been open, drawn like a terminal. a sketch of what the panel draws (the real thing is coloured, with a row of palette swatches):
+
+```text
+ mishti   my-vault   18:13
+❯ fastfetch
+user      mishti@macbook
+os        macOS
+vault     ~/my-vault
+notes     128
+links     342
+folders   14
+files     171
+size      2.4 MB
+uptime    1 hour, 12 mins
+
+❯ date
+Sat Nov  7 18:13:05 2026
+```
 
 desktop only.
 
@@ -18,7 +52,8 @@ desktop only.
 - it makes **no network requests** and has no telemetry. even the fonts are embedded in `styles.css`, so nothing is downloaded.
 - it never modifies your notes.
 
-what it does read, and how:
+<details>
+<summary>what it reads, and how</summary>
 
 | what | how | why |
 | --- | --- | --- |
@@ -30,6 +65,8 @@ what it does read, and how:
 | names of installed fonts | the browser's Local Font Access API, **only when you press Scan** | to list your monospace fonts in the font menu. the names stay in memory and are not saved or sent anywhere |
 
 the only thing it writes is its own settings file, `data.json`, inside its plugin folder.
+
+</details>
 
 you can check the "no commands, no network" claim yourself. this finds nothing:
 
@@ -59,11 +96,11 @@ the counts update by themselves when the vault changes. the `? info` button at t
 
 ## install
 
-**community plugins** (once it is listed): settings → community plugins → browse → search for `mish.fastfetch`.
-
-**with [brat](https://github.com/TfTHacker/obsidian42-brat):** add the beta plugin `mishtiiikrishnaa/mish.fastfetch`.
+**with [brat](https://github.com/TfTHacker/obsidian42-brat)** (works today): add the beta plugin `mishtiiikrishnaa/mish.fastfetch`.
 
 **by hand:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/mishtiiikrishnaa/mish.fastfetch/releases/latest), put them in `<your vault>/.obsidian/plugins/mish-fastfetch/`, reload obsidian and enable the plugin.
+
+**community plugins** (once it is listed): settings → community plugins → browse → search for `mish.fastfetch`.
 
 ## use
 
@@ -92,10 +129,44 @@ if you'd rather use another font, open the **font** menu in settings:
 
 a theme or snippet can also restyle the panel with css variables, each of which has a default: `--vf-mono`, `--vf-fg`, `--vf-line`, `--vf-black`, `--vf-pink`, `--vf-pink-hi`, `--vf-peach`, `--vf-yellow`, `--vf-green`, `--vf-blue`, `--vf-lilac`, `--vf-cyan`, `--vf-dim`. a `--vf-mono` set by a theme is used whenever the font menu is left on its default.
 
+## faq
+
+<details>
+<summary>is anything sent anywhere?</summary>
+
+no. there is no network code at all, and you can prove it with the grep above.
+
+</details>
+
+<details>
+<summary>can i hide my name and path before taking a screenshot?</summary>
+
+yes. set your own user and host name in settings, and switch on the option to hide the full vault path.
+
+</details>
+
+<details>
+<summary>why is it desktop only?</summary>
+
+it reads your user name and computer name with node's `os` module, which exists on desktop obsidian only.
+
+</details>
+
+<details>
+<summary>do the counts update by themselves?</summary>
+
+yes. they follow the vault as notes and files are created, renamed and deleted.
+
+</details>
+
 ## credits and licences
 
 the embedded fonts are subsets of cmu typewriter text (SIL Open Font License 1.1) and of the nerd fonts symbols font (MIT and OFL 1.1; the icons come from Font Awesome, CC BY 4.0, and Octicons, MIT). full details are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), and the licence texts are in the [`licenses/`](licenses) folder.
 
-## licence
+the plugin's own code is [MIT](LICENSE), (c) 2026 mishti.
 
-the plugin's own code is [MIT](LICENSE), (c) 2026 mishti. the embedded fonts keep their own licences.
+<div align="center">
+
+made by [mishti](https://github.com/mishtiiikrishnaa)
+
+</div>
