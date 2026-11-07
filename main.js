@@ -23,6 +23,57 @@ const el = (tag, cls, text) => {
   return node;
 };
 
+/* ── rainbow gradient for our own icons ──────────────────────────────────
+   a hidden svg holds the gradient; styles.css points `stroke` at it.
+   mish.eza does the same, whoever loads first creates it. */
+const RAINBOW_ID = 'mish-rainbow-defs';
+
+const mountRainbow = () => {
+  let svg = document.getElementById(RAINBOW_ID);
+  if (!svg) {
+    const NS = 'http://www.w3.org/2000/svg';
+    svg = document.createElementNS(NS, 'svg');
+    svg.id = RAINBOW_ID;
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none';
+
+    const defs = document.createElementNS(NS, 'defs');
+    const grad = document.createElementNS(NS, 'linearGradient');
+    grad.id = 'mish-rainbow';
+    grad.setAttribute('gradientUnits', 'userSpaceOnUse');   /* lucide icons live in a 24x24 box */
+    grad.setAttribute('x1', '2');
+    grad.setAttribute('y1', '2');
+    grad.setAttribute('x2', '22');
+    grad.setAttribute('y2', '22');
+
+    const stops = [
+      ['--vf-pink-hi', '#ffa6c9'], ['--vf-peach', '#ffd6a6'], ['--vf-yellow', '#fff1a8'],
+      ['--vf-green', '#c9ffa6'], ['--vf-blue', '#a6c9ff'], ['--vf-lilac', '#c9b0ff'],
+    ];
+    stops.forEach(([name, fallback], i) => {
+      const stop = document.createElementNS(NS, 'stop');
+      stop.setAttribute('offset', String(i / (stops.length - 1)));
+      stop.style.stopColor = 'var(' + name + ', ' + fallback + ')';
+      grad.appendChild(stop);
+    });
+
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+    document.body.appendChild(svg);
+  }
+  svg.dataset.users = String(Number(svg.dataset.users || 0) + 1);
+};
+
+const unmountRainbow = () => {
+  const svg = document.getElementById(RAINBOW_ID);
+  if (!svg) return;
+  const left = Number(svg.dataset.users || 1) - 1;
+  if (left <= 0) svg.remove();
+  else svg.dataset.users = String(left);
+};
+
 const human = (bytes) => {
   if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' gb';
   if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' mb';
@@ -257,9 +308,13 @@ module.exports = class TerminalVaultFetch extends Plugin {
       ? performance.timeOrigin
       : Date.now();
 
+    mountRainbow();
+
     this.registerView(VIEW_TYPE, (leaf) => new FetchView(leaf, this));
 
-    this.addRibbonIcon('terminal', 'Open fetch', () => this.activate());
+    /* the class lets styles.css find our ribbon icon and give it the gradient */
+    const ribbon = this.addRibbonIcon('terminal', 'Open fetch', () => this.activate());
+    ribbon.addClass('mish-fetch-ribbon');
     this.addCommand({
       id: 'open-fetch',
       name: 'Open fetch in sidebar',
@@ -273,6 +328,10 @@ module.exports = class TerminalVaultFetch extends Plugin {
       const leaf = this.app.workspace.getLeftLeaf(false);
       if (leaf) await leaf.setViewState({ type: VIEW_TYPE, active: false });
     });
+  }
+
+  onunload() {
+    unmountRainbow();
   }
 
   async activate() {

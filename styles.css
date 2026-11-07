@@ -172,3 +172,16 @@
 .vf-swatches span:nth-child(6) { background: var(--vf-pink-hi, #ffa6c9); }
 .vf-swatches span:nth-child(7) { background: var(--vf-cyan, #a6fff0); }
 .vf-swatches span:nth-child(8) { background: var(--vf-fg, #e8e8ed); }
+
+/* ═══ rainbow gradient on our own icons ═══
+   the gradient (#mish-rainbow) is injected by the plugin; the second value
+   after url() is the fallback colour if it isn't there. */
+
+.mish-fetch-ribbon svg,
+.workspace-tab-header[data-type="tv-fetch-view"] .workspace-tab-header-inner-icon svg {
+  stroke: url(#mish-rainbow) #ffa6c9 !important;
+}
+
+.mish-fetch-ribbon:hover svg {
+  filter: brightness(1.2);
+}
