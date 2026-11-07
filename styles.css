@@ -185,3 +185,28 @@
 .mish-fetch-ribbon:hover svg {
   filter: brightness(1.2);
 }
+
+/* ═══ thin rainbow scrollbar for the fetch panel ═══ */
+
+.tv-root::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.tv-root::-webkit-scrollbar-track,
+.tv-root::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.tv-root::-webkit-scrollbar-thumb,
+.tv-root::-webkit-scrollbar-thumb:hover {
+  border: none;
+  border-radius: 4px;
+  background: linear-gradient(
+    180deg,
+    var(--vf-pink-hi, #ffa6c9),
+    var(--vf-peach, #ffd6a6),
+    var(--vf-yellow, #fff1a8),
+    var(--vf-green, #c9ffa6),
+    var(--vf-blue, #a6c9ff),
+    var(--vf-lilac, #c9b0ff)
+  );
+}
