@@ -4,6 +4,7 @@
    mish.fastfetch
    powerline starship prompt + `fastfetch` + macOS `date`, as a sidebar view.
    uptime = time since obsidian was opened.
+   dressed like mish.eza: the same palette presets, pill shapes and card options.
    ═══════════════════════════════════════════════════════════════════════ */
 
 const { Plugin, ItemView, PluginSettingTab, Setting, Notice, Platform, FileSystemAdapter } = require('obsidian');
@@ -21,10 +22,166 @@ const ROW_NAMES = {
   folders: 'folders', files: 'files', size: 'size', uptime: 'uptime',
 };
 
+/* ── the rainbow ─────────────────────────────────────────────────────────
+   six colours, in this order everywhere: the prompt pills, the rows, the card
+   border, the scrollbar and the ribbon icon all read from them. same palette
+   engine as mish.eza. a slot is a few css variables: the theme's own (vf), the
+   fill this plugin ships (f: pills, border, scrollbar) and the text version
+   (t: row text; darker in light mode, `dark` = how much, copied from styles.css). */
+const SLOTS = [
+  { name: 'pink',   vf: '--vf-pink-hi', f: '--mz-f-pink-hi', t: '--mz-pink-hi', dark: 40, used: 'user pill, the row names, the user and files rows, where the border starts' },
+  { name: 'peach',  vf: '--vf-peach',   f: '--mz-f-peach',   t: '--mz-peach',   dark: 42, used: 'vault pill, the vault path row' },
+  { name: 'yellow', vf: '--vf-yellow',  f: '--mz-f-yellow',  t: '--mz-yellow',  dark: 50, used: 'first arrow of the >>> bridge, colour swatches' },
+  { name: 'green',  vf: '--vf-green',   f: '--mz-f-green',   t: '--mz-green',   dark: 48, used: 'commands and the prompt arrow, the notes row, second bridge arrow' },
+  { name: 'blue',   vf: '--vf-blue',    f: '--mz-f-blue',    t: '--mz-blue',    dark: 40, used: 'third bridge arrow, the links and uptime rows, the date' },
+  { name: 'lilac',  vf: '--vf-lilac',   f: '--mz-f-lilac',   t: '--mz-lilac',   dark: 38, used: 'time pill, the folders row, where the border ends' },
+];
+
+/* fastfetch paints two things the six slots don't cover: the row names (hot pink) and
+   the folders row (cyan). with a custom palette they borrow slot `from`. */
+const EXTRAS = [
+  { vf: '--vf-pink', f: '--mz-f-pink', t: '--mz-pink', from: 0 },
+  { vf: '--vf-cyan', f: '--mz-f-cyan', t: '--mz-cyan', from: 5 },
+];
+
+/* what the plugin draws with when "mish" is picked (the sorbet palette) */
+const DARK_FILLS  = ['#ffa6c9', '#ffd6a6', '#fff1a8', '#c9ffa6', '#a6c9ff', '#c9b0ff'];
+const LIGHT_FILLS = ['#ff8fb8', '#ffb27a', '#ffd54f', '#8ee07f', '#82b4ff', '#b79bff'];
+
+const PALETTES = {
+  catppuccin: ['#f5c2e7', '#fab387', '#f9e2af', '#a6e3a1', '#89b4fa', '#cba6f7'],
+  dracula:    ['#ff79c6', '#ffb86c', '#f1fa8c', '#50fa7b', '#8be9fd', '#bd93f9'],
+  nord:       ['#bf616a', '#d08770', '#ebcb8b', '#a3be8c', '#81a1c1', '#b48ead'],
+  gruvbox:    ['#fb4934', '#fe8019', '#fabd2f', '#b8bb26', '#83a598', '#d3869b'],
+  ocean:      ['#c4f1f9', '#7fe0e8', '#6fd3c2', '#7bc6f0', '#82a8ff', '#a98bff'],
+  sunset:     ['#ff8fa3', '#ff9e6b', '#ffc15e', '#ff7eb6', '#e08bff', '#b794ff'],
+  forest:     ['#e6c9a8', '#d9b26f', '#e3e08a', '#9fd58a', '#6fc2a0', '#7fa8c9'],
+  greyscale:  ['#f5f5f5', '#dcdcdc', '#c4c4c4', '#a8a8a8', '#8c8c8c', '#707070'],
+};
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const SHAPES = ['arrow', 'round', 'flat'];
+
+const lightTheme = () => document.body.classList.contains('theme-light');
+const themeFills = () => (lightTheme() ? LIGHT_FILLS : DARK_FILLS).slice();
+
+const num = (v, lo, hi, dflt) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+};
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/* defaults underneath, what was saved on top; nested groups merge key by key,
+   so a setting added in an update never goes missing from an old data.json */
+const deepMerge = (base, over) => {
+  const out = Object.assign({}, base);
+  if (!isPlain(over)) return out;
+  for (const k of Object.keys(over)) {
+    out[k] = isPlain(base[k]) && isPlain(over[k]) ? deepMerge(base[k], over[k]) : over[k];
+  }
+  return out;
+};
+
+/* a data.json from an older version, or one edited by hand, must never break the panel */
+const sanitise = (cfg) => {
+  const p = cfg.palette;
+  if (p.preset !== 'theme' && p.preset !== 'custom' && !PALETTES[p.preset]) p.preset = 'theme';
+  if (!Array.isArray(p.colours) || p.colours.length !== 6 || !p.colours.every((c) => HEX.test(c))) {
+    p.colours = DARK_FILLS.slice();
+  }
+  if (!SHAPES.includes(cfg.pillShape)) cfg.pillShape = 'arrow';
+  return cfg;
+};
+
+/* the six colours to draw with, or null when the theme decides */
+const customColours = (cfg) => {
+  const p = cfg.palette;
+  return p.preset !== 'theme' && Array.isArray(p.colours) && p.colours.length === 6 && p.colours.every((c) => HEX.test(c))
+    ? p.colours : null;
+};
+
+/* css variables for the colours. a custom palette sets the plugin's own fills and text
+   colours, and tells the theme's --vf-* to step aside (`initial` = "not set", so the
+   fallbacks win). in light mode the text colour is the fill darkened, the same way
+   styles.css does it for the default palette. */
+const paletteVars = (cfg) => {
+  const v = {};
+  const colours = customColours(cfg);
+  if (colours) {
+    const light = lightTheme();
+    const text = (hex, dark) => (light ? 'color-mix(in oklab, ' + hex + ', black ' + dark + '%)' : hex);
+    SLOTS.forEach((s, i) => {
+      v[s.vf] = 'initial';
+      v[s.f] = colours[i];
+      v[s.t] = text(colours[i], s.dark);
+    });
+    EXTRAS.forEach((x) => {
+      v[x.vf] = 'initial';
+      v[x.f] = colours[x.from];
+      v[x.t] = text(colours[x.from], SLOTS[x.from].dark);
+    });
+  }
+  if (HEX.test(cfg.inkColour)) {
+    v['--vf-black'] = 'initial';
+    v['--mz-ink'] = cfg.inkColour;
+  }
+  return v;
+};
+
+/* css variables for the card. every one has the old fixed value as its fallback in
+   styles.css, so the defaults look exactly as before. */
+const layoutVars = (cfg) => {
+  const c = cfg.card;
+  const v = {
+    '--ff-radius': num(c.radius, 0, 28, 10) + 'px',
+    '--ff-pad': num(c.pad, 0, 32, 10) + 'px',
+    '--ff-angle': num(c.angle, 0, 360, 135) + 'deg',
+    '--ff-mt': c.vAlign === 'top' ? '0' : 'auto',
+    '--ff-ml': c.hAlign === 'left' ? '0' : 'auto',
+  };
+  const w = num(c.ringWidth, 1, 4, 1) + 'px';
+  if (c.ring === 'none') {
+    v['--ff-ring-w'] = '0px';
+  } else if (c.ring === 'accent') {
+    v['--ff-ring-w'] = w;
+    v['--ff-ring-bg'] = 'var(--interactive-accent)';
+  } else if (c.ring === 'subtle') {
+    v['--ff-ring-w'] = w;
+    v['--ff-ring-bg'] = 'var(--background-modifier-border)';
+  } else {
+    v['--ff-ring-w'] = w;                 /* rainbow: the gradient in styles.css */
+  }
+  return v;
+};
+
+/* sets the variables, and clears ones set last time that are no longer wanted */
+const applyVars = (node, vars) => {
+  for (const name of node.__ffVars || []) {
+    if (!(name in vars)) node.style.removeProperty(name);
+  }
+  for (const name of Object.keys(vars)) node.style.setProperty(name, vars[name]);
+  node.__ffVars = Object.keys(vars);
+};
+
 const DEFAULT_SETTINGS = {
   username: '',          /* empty = auto-detect */
   hostname: '',          /* empty = auto-detect */
   showFullPath: true,
+  vaultLabel: '',        /* empty = ~/<vault name> */
+  pillShape: 'arrow',    /* arrow | round | flat */
+  palette: { preset: 'theme', colours: DARK_FILLS.slice() },   /* preset = theme | custom | one of PALETTES */
+  inkColour: '',         /* text on the pills. empty = automatic (dark ink) */
+  card: {
+    width: 'fit',        /* fit (the prompt decides) | full (the whole sidebar) */
+    hAlign: 'centre',    /* centre | left */
+    vAlign: 'centre',    /* centre | top */
+    ring: 'rainbow',     /* rainbow | accent | subtle | none */
+    ringWidth: 1,
+    angle: 135,          /* degrees, for the rainbow border */
+    radius: 10,
+    pad: 10,
+  },
   font: 'bundled',       /* bundled | obsidian | system | family:<name> | custom */
   customFont: '',
   pills: { user: true, vault: true, time: true },
@@ -134,9 +291,9 @@ const el = (tag, cls, text) => {
 };
 
 /* ── rainbow gradient for our own icons ──────────────────────────────────
-   a hidden svg holds the gradient; styles.css points `stroke` at it.
-   mish.eza does the same, whoever loads first creates it. */
-const RAINBOW_ID = 'mish-rainbow-defs';
+   a hidden svg holds the gradient; styles.css points `stroke` at it. it is this
+   plugin's own (mish.eza keeps another), so each icon follows its own palette. */
+const RAINBOW_ID = 'mish-fetch-rainbow-defs';
 
 const mountRainbow = () => {
   let svg = document.getElementById(RAINBOW_ID);
@@ -151,7 +308,7 @@ const mountRainbow = () => {
 
     const defs = document.createElementNS(NS, 'defs');
     const grad = document.createElementNS(NS, 'linearGradient');
-    grad.id = 'mish-rainbow';
+    grad.id = 'mish-fetch-rainbow';
     grad.setAttribute('gradientUnits', 'userSpaceOnUse');   /* lucide icons live in a 24x24 box */
     grad.setAttribute('x1', '2');
     grad.setAttribute('y1', '2');
@@ -174,6 +331,22 @@ const mountRainbow = () => {
     document.body.appendChild(svg);
   }
   svg.dataset.users = String(Number(svg.dataset.users || 0) + 1);
+};
+
+/* point the gradient's six stops at the palette, or back at the theme's variables
+   when the palette is the default */
+const paintRainbow = (cfg) => {
+  const svg = document.getElementById(RAINBOW_ID);
+  if (!svg) return;
+  const colours = customColours(cfg);
+  const light = lightTheme();
+  svg.querySelectorAll('stop').forEach((stop, i) => {
+    const sl = SLOTS[i];
+    if (!sl) return;
+    stop.style.stopColor = colours
+      ? (light ? 'color-mix(in oklab, ' + colours[i] + ', black ' + sl.dark + '%)' : colours[i])
+      : 'var(' + sl.vf + ', var(' + sl.t + ', ' + DARK_FILLS[i] + '))';
+  });
 };
 
 const unmountRainbow = () => {
@@ -216,7 +389,8 @@ const fitBar = (bar, watch) => {
   watch.forEach((node) => ro.observe(node));
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
   schedule();
-  return () => ro.disconnect();
+  schedule.dispose = () => ro.disconnect();
+  return schedule;
 };
 
 /* ── rainbow scrollbar ──────────────────────────────────────────────────
@@ -317,11 +491,11 @@ const formatUptime = (ms) => {
 
 /* ── starship-style powerline prompt ─────────────────────────────────── */
 
-const buildPrompt = (vaultName, user, pills) => {
+const buildPrompt = (vaultLabel, user, pills) => {
   const bar = el('div', 'vf-bar');
   const segs = [];
   if (pills.user) segs.push(['vf-user', osGlyph() + ' ' + user]);
-  if (pills.vault) segs.push(['vf-path', '~/' + vaultName]);
+  if (pills.vault) segs.push(['vf-path', vaultLabel]);
   if (pills.time) {
     /* the chevrons only make sense as a bridge to the time pill */
     if (pills.user || pills.vault) segs.push(['vf-ch vf-ch1', ''], ['vf-ch vf-ch2', ''], ['vf-ch vf-ch3', '']);
@@ -513,7 +687,7 @@ class FetchView extends ItemView {
     last.appendChild(btn);
     card.appendChild(last);
 
-    this.applyFont();
+    this.applyLook();
     this.applyVisibility();
   }
 
@@ -523,12 +697,14 @@ class FetchView extends ItemView {
     const who = plugin.identity();
 
     if (refs.disposeFit) refs.disposeFit();
-    const prompt = buildPrompt(this.app.vault.getName(), who.user, plugin.settings.pills);
+    const label = plugin.settings.vaultLabel || '~/' + this.app.vault.getName();
+    const prompt = buildPrompt(label, who.user, plugin.settings.pills);
     if (refs.bar) refs.bar.replaceWith(prompt.bar);
     else refs.card.prepend(prompt.bar);
     refs.bar = prompt.bar;
     refs.clock = prompt.clock;
-    refs.disposeFit = fitBar(prompt.bar, [refs.card, refs.scroll]);   /* keeps the full vault name on screen */
+    refs.fit = fitBar(prompt.bar, [refs.card, refs.scroll]);   /* keeps the full vault name on screen */
+    refs.disposeFit = refs.fit.dispose;
 
     if (refs.tip) refs.tip.hidden = true;
     if (refs.clock) {
@@ -559,6 +735,20 @@ class FetchView extends ItemView {
     else this.refs.card.style.removeProperty('--vf-mono');
   }
 
+  /* the look: font, colours, card, pill shape. colours and sizes are css variables on the
+     view's root (so the scrollbar beside the card gets them too); shape is a class. */
+  applyLook() {
+    const { refs, plugin } = this;
+    if (!refs.card) return;
+    const cfg = plugin.settings;
+
+    this.applyFont();
+    applyVars(this.contentEl, Object.assign({}, paletteVars(cfg), layoutVars(cfg)));
+    SHAPES.forEach((n) => refs.card.classList.toggle('vf-shape-' + n, cfg.pillShape === n));
+    refs.card.classList.toggle('vf-full', cfg.card.width === 'full');
+    if (refs.fit) refs.fit();
+  }
+
   /* row and section toggles */
   applyVisibility() {
     const { refs } = this;
@@ -586,7 +776,7 @@ class FetchView extends ItemView {
     const who = plugin.identity();
     this.drawPrompt();
     refs.userRow.textContent = who.user + '@' + who.host;
-    this.applyFont();
+    this.applyLook();
     this.applyVisibility();
     this.refresh();
     this.tick();
@@ -691,6 +881,53 @@ class FetchSettingTab extends PluginSettingTab {
           await plugin.saveSettings();
         }));
 
+    /* the builders below (the same ones mish.eza uses) write into the settings, repaint,
+       and save a moment later. kind: 'look' = styles only (fast), 'bar' = redraw the prompt too. */
+    const apply = (kind) => {
+      if (kind === 'bar') plugin.refreshViews();
+      else plugin.restyle();
+      plugin.persist();
+    };
+    const holder = (group) => (group ? s[group] : s);
+    const dflt = (group, key) => (group ? DEFAULT_SETTINGS[group] : DEFAULT_SETTINGS)[key];
+
+    const drop = (group, key, name, desc, options, kind) => new Setting(containerEl)
+      .setName(name)
+      .setDesc(desc || '')
+      .addDropdown((d) => d
+        .addOptions(options)
+        .setValue(String(holder(group)[key]))
+        .onChange((value) => {
+          holder(group)[key] = value;
+          apply(kind);
+        }));
+
+    /* a slider with a little reset arrow that puts the default back */
+    const slide = (group, key, name, desc, lo, hi, step, kind, unit) => {
+      let comp = null;
+      return new Setting(containerEl)
+        .setName(name)
+        .setDesc(desc || '')
+        .addSlider((sl) => {
+          comp = sl;
+          sl.setLimits(lo, hi, step)
+            .setValue(Number(holder(group)[key]))
+            .setDynamicTooltip()
+            .onChange((value) => {
+              holder(group)[key] = value;
+              apply(kind);
+            });
+        })
+        .addExtraButton((b) => b
+          .setIcon('rotate-ccw')
+          .setTooltip('back to the default (' + dflt(group, key) + (unit || '') + ')')
+          .onClick(() => {
+            holder(group)[key] = dflt(group, key);
+            comp.setValue(dflt(group, key));
+            apply(kind);
+          }));
+    };
+
     /* ── who you are ── */
     new Setting(containerEl).setName('identity').setHeading();
 
@@ -731,12 +968,118 @@ class FetchSettingTab extends PluginSettingTab {
     flag('pills', 'user', 'user pill', 'your name, with a logo for your operating system.');
     flag('pills', 'vault', 'vault pill', 'the name of this vault.');
     flag('pills', 'time', 'time pill', 'when obsidian was opened. hover it for the full date and uptime.');
+    drop(null, 'pillShape', 'pill shape', 'arrow is the powerline look. round and flat drop the arrow tips (and the little >>> bridge before the time pill) and use gaps instead.',
+      { arrow: 'arrow (powerline)', round: 'round', flat: 'flat' }, 'look');
+    new Setting(containerEl)
+      .setName('vault pill text')
+      .setDesc('what the second pill says. leave it empty for ~/ and the vault name.')
+      .addText((text) => text
+        .setPlaceholder('~/' + plugin.app.vault.getName())
+        .setValue(s.vaultLabel)
+        .onChange((value) => {
+          s.vaultLabel = value.trim();
+          apply('bar');
+        }));
 
     /* ── what the panel shows ── */
     new Setting(containerEl).setName('rows').setHeading();
     ROWS.forEach((key) => flag('show', key, ROW_NAMES[key], hints[key]));
     flag('show', 'swatches', 'colour swatches', 'the strip of colour blocks under the rows.');
     flag('show', 'date', 'date line', 'the date line at the bottom of the panel.');
+
+    /* ── colours ── */
+    new Setting(containerEl).setName('colours').setHeading();
+
+    const pickers = [];
+    let presetDrop = null;
+    let refreshing = false;       /* setValue on a picker must not count as the user picking */
+    const shown = () => (s.palette.preset === 'theme' ? themeFills() : s.palette.colours);
+
+    const presets = { theme: 'mish' };
+    Object.keys(PALETTES).forEach((k) => { presets[k] = k; });
+    presets.custom = 'custom';
+
+    new Setting(containerEl)
+      .setName('palette')
+      .setDesc('the six colours of the rainbow. they colour the prompt pills, the rows, the card border, the scrollbar and the ribbon icon. mish is the default: the pastel rainbow this plugin ships, and it follows the colours of your obsidian theme if the theme sets them. pick a preset, then change any colour below. in light mode the text versions are darkened for you.')
+      .addDropdown((d) => {
+        presetDrop = d;
+        d.addOptions(presets)
+          .setValue(presets[s.palette.preset] ? s.palette.preset : 'theme')
+          .onChange((value) => {
+            const was = s.palette.preset;
+            s.palette.preset = value;
+            if (PALETTES[value]) s.palette.colours = PALETTES[value].slice();
+            else if (value === 'custom' && was === 'theme') s.palette.colours = themeFills();
+            refreshing = true;
+            shown().forEach((c, i) => { if (pickers[i]) pickers[i].setValue(c); });
+            refreshing = false;
+            apply('look');
+          });
+      })
+      .addExtraButton((b) => b
+        .setIcon('rotate-ccw')
+        .setTooltip('back to mish')
+        .onClick(() => {
+          s.palette.preset = 'theme';
+          presetDrop.setValue('theme');
+          refreshing = true;
+          shown().forEach((c, i) => { if (pickers[i]) pickers[i].setValue(c); });
+          refreshing = false;
+          apply('look');
+        }));
+
+    SLOTS.forEach((slot, i) => {
+      new Setting(containerEl)
+        .setName('colour ' + (i + 1))
+        .setDesc(slot.used)
+        .addColorPicker((c) => {
+          pickers[i] = c;
+          c.setValue(shown()[i]).onChange((hex) => {
+            if (refreshing) return;
+            if (s.palette.preset === 'theme') s.palette.colours = themeFills();   /* start from what you were seeing */
+            s.palette.colours[i] = String(hex).toLowerCase();
+            s.palette.preset = 'custom';
+            presetDrop.setValue('custom');
+            apply('look');
+          });
+        });
+    });
+
+    let inkPicker = null;
+    const autoInk = () => (lightTheme() ? '#2a2430' : '#0f0f12');
+    new Setting(containerEl)
+      .setName('pill text colour')
+      .setDesc('the text on every pill. automatic = dark ink. try white with a dark palette.')
+      .addColorPicker((c) => {
+        inkPicker = c;
+        c.setValue(HEX.test(s.inkColour) ? s.inkColour : autoInk()).onChange((hex) => {
+          s.inkColour = String(hex).toLowerCase();
+          apply('look');
+        });
+      })
+      .addExtraButton((b) => b
+        .setIcon('rotate-ccw')
+        .setTooltip('back to automatic')
+        .onClick(() => {
+          s.inkColour = '';
+          inkPicker.setValue(autoInk());
+          apply('look');
+        }));
+
+    /* ── card and layout ── */
+    new Setting(containerEl).setName('card and layout').setHeading();
+    drop('card', 'width', 'card width', 'fit = as wide as the prompt (the same size as mish.eza). full = the whole sidebar.',
+      { fit: 'fit the prompt', full: 'full width' }, 'look');
+    drop('card', 'hAlign', 'horizontal position', 'only matters for the fit width.', { centre: 'centre', left: 'left' }, 'look');
+    drop('card', 'vAlign', 'vertical position', 'centred when the card is shorter than the sidebar, or pinned to the top.',
+      { centre: 'centre', top: 'top' }, 'look');
+    drop('card', 'ring', 'border', "rainbow uses the palette. accent is obsidian's accent colour. subtle is your theme's border colour.",
+      { rainbow: 'rainbow', accent: 'accent colour', subtle: 'subtle', none: 'none' }, 'look');
+    slide('card', 'ringWidth', 'border thickness', '', 1, 4, 1, 'look', 'px');
+    slide('card', 'angle', 'rainbow angle', 'direction of the border gradient. 135 runs top-left to bottom-right.', 0, 345, 15, 'look', '°');
+    slide('card', 'radius', 'corner radius', '', 0, 28, 1, 'look', 'px');
+    slide('card', 'pad', 'outer margin', 'space between the card and the edge of the sidebar.', 0, 32, 1, 'look', 'px');
 
     /* ── font ── */
     new Setting(containerEl).setName('appearance').setHeading();
@@ -809,6 +1152,23 @@ class FetchSettingTab extends PluginSettingTab {
           }
           button.setDisabled(false);
         }));
+
+    /* ── reset ── */
+    new Setting(containerEl).setName('reset').setHeading();
+    new Setting(containerEl)
+      .setName('reset appearance')
+      .setDesc('puts every colour, shape and card option back to the default. your name, rows, font and prompt pills are not touched.')
+      .addButton((button) => button
+        .setButtonText('reset')
+        .setWarning()
+        .onClick(async () => {
+          for (const k of ['palette', 'inkColour', 'pillShape', 'vaultLabel', 'card']) {
+            s[k] = clone(DEFAULT_SETTINGS[k]);
+          }
+          await plugin.saveSettings();
+          plugin.restyle();
+          this.display();
+        }));
   }
 }
 
@@ -823,7 +1183,11 @@ module.exports = class MishFastfetch extends Plugin {
       : Date.now();
 
     mountRainbow();
+    paintRainbow(this.settings);
     this.addSettingTab(new FetchSettingTab(this.app, this));
+
+    /* light <-> dark: custom colours have a darker text version in light mode */
+    this.registerEvent(this.app.workspace.on('css-change', () => this.restyle()));
 
     this.registerView(VIEW_TYPE, (leaf) => new FetchView(leaf, this));
 
@@ -846,20 +1210,40 @@ module.exports = class MishFastfetch extends Plugin {
   }
 
   onunload() {
+    if (this.saveTimer) {
+      window.clearTimeout(this.saveTimer);
+      this.saveData(this.settings);       /* a change made a moment ago is not lost */
+    }
     unmountRainbow();
   }
 
   async loadSettings() {
     const saved = (await this.loadData()) || {};
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved, {
-      pills: Object.assign({}, DEFAULT_SETTINGS.pills, saved.pills),
-      show: Object.assign({}, DEFAULT_SETTINGS.show, saved.show),
-    });
+    this.settings = sanitise(deepMerge(clone(DEFAULT_SETTINGS), saved));
   }
 
   async saveSettings() {
+    window.clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
     await this.saveData(this.settings);
     this.refreshViews();
+  }
+
+  /* slider drags and colour picks: save a moment after the last change */
+  persist() {
+    window.clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      this.saveTimer = 0;
+      this.saveData(this.settings);
+    }, 500);
+  }
+
+  /* styles only (colours, sizes, shape): cheaper than refreshViews, no prompt redraw */
+  restyle() {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view instanceof FetchView) leaf.view.applyLook();
+    });
+    paintRainbow(this.settings);
   }
 
   /* what the settings say, falling back to what the system says */
@@ -874,6 +1258,7 @@ module.exports = class MishFastfetch extends Plugin {
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((leaf) => {
       if (leaf.view instanceof FetchView) leaf.view.applySettings();
     });
+    paintRainbow(this.settings);
   }
 
   async activate() {

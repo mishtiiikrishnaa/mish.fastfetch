@@ -131,7 +131,7 @@ body.theme-light {
   min-width: 0;
   min-height: 0;
   display: flex;                 /* margin:auto on the card centres it both ways */
-  padding: 10px;
+  padding: var(--ff-pad, 10px);   /* settings: outer margin */
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -146,7 +146,7 @@ body.theme-light {
   background: transparent;           /* no colour of its own: whatever the theme's sidebar is shows through */
   color: var(--vf-fg, var(--mz-fg));
   border: 0;                         /* the rainbow ring below is the border */
-  border-radius: 10px;
+  border-radius: var(--ff-radius, 10px);   /* settings: corner radius */
   padding: 12px 12px 10px;
   font-size: 12.5px;
   line-height: 1.5;
@@ -160,10 +160,13 @@ body.theme-light {
   min-width: min(100%, 28ch);
   max-width: 100%;
   flex: 0 0 auto;
-  margin: auto;
+  margin: var(--ff-mt, auto) auto auto var(--ff-ml, auto);   /* settings: pin to the top / left. default = centred */
   overflow: hidden;
   text-align: left;
 }
+
+/* wide card (settings): the whole sidebar instead of the prompt's width */
+.vf.vf-full { width: 100%; }
 
 /* thin rainbow border: a 1px gradient ring cut out with a mask, so the card
    itself stays see-through. same colours as the rainbow scrollbar. */
@@ -172,17 +175,17 @@ body.theme-light {
   position: absolute;
   inset: 0;
   z-index: 6;
-  padding: 1px;
+  padding: var(--ff-ring-w, 1px);     /* settings: thickness (0 = no border) */
   border-radius: inherit;
-  background: linear-gradient(
-    135deg,
+  background: var(--ff-ring-bg, linear-gradient(     /* settings can swap the rainbow for one colour */
+    var(--ff-angle, 135deg),
     var(--vf-pink-hi, var(--mz-f-pink-hi)),
     var(--vf-peach, var(--mz-f-peach)),
     var(--vf-yellow, var(--mz-f-yellow)),
     var(--vf-green, var(--mz-f-green)),
     var(--vf-blue, var(--mz-f-blue)),
     var(--vf-lilac, var(--mz-f-lilac))
-  );
+  ));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -265,6 +268,32 @@ body.theme-light {
 .vf-ch1 { background: var(--vf-yellow, var(--mz-f-yellow)); }
 .vf-ch2 { background: var(--vf-green, var(--mz-f-green)); }
 .vf-ch3 { background: var(--vf-blue, var(--mz-f-blue)); }
+
+/* pill shapes (settings): arrow is the default above. round and flat drop the arrow
+   tips and the little >>> bridge, and put a gap between the pills instead. */
+.vf-shape-round .vf-seg,
+.vf-shape-round .vf-seg:first-child,
+.vf-shape-round .vf-seg:last-child,
+.vf-shape-round .vf-seg:first-child:last-child,
+.vf-shape-flat .vf-seg,
+.vf-shape-flat .vf-seg:first-child,
+.vf-shape-flat .vf-seg:last-child,
+.vf-shape-flat .vf-seg:first-child:last-child {
+  clip-path: none;
+  padding: 0 11px;
+  margin-left: 0;
+}
+.vf-shape-round .vf-seg,
+.vf-shape-round .vf-seg:first-child,
+.vf-shape-round .vf-seg:last-child,
+.vf-shape-round .vf-seg:first-child:last-child { border-radius: 11px; }
+.vf-shape-flat .vf-seg,
+.vf-shape-flat .vf-seg:first-child,
+.vf-shape-flat .vf-seg:last-child,
+.vf-shape-flat .vf-seg:first-child:last-child { border-radius: 0; }
+.vf-shape-round .vf-seg + .vf-seg { margin-left: 4px; }
+.vf-shape-round .vf-ch,
+.vf-shape-flat .vf-ch { display: none; }
 
 /* — command lines — */
 .vf-cmd {
@@ -421,12 +450,12 @@ body.theme-light .vf-swatches span:nth-child(8) {
 }
 
 /* ═══ rainbow gradient on our own icons ═══
-   the gradient (#mish-rainbow) is injected by the plugin; the second value
+   the gradient (#mish-fetch-rainbow) is injected by the plugin; the second value
    after url() is the fallback colour if it isn't there. */
 
 .mish-fetch-ribbon svg,
 .workspace-tab-header[data-type="tv-fetch-view"] .workspace-tab-header-inner-icon svg {
-  stroke: url(#mish-rainbow) #ffa6c9 !important;
+  stroke: url(#mish-fetch-rainbow) #ffa6c9 !important;
 }
 
 .mish-fetch-ribbon:hover svg {
