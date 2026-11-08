@@ -91,6 +91,7 @@ const sanitise = (cfg) => {
     p.colours = DARK_FILLS.slice();
   }
   if (!SHAPES.includes(cfg.pillShape)) cfg.pillShape = 'arrow';
+  cfg.lowercaseUi = cfg.lowercaseUi !== false;
   return cfg;
 };
 
@@ -164,7 +165,50 @@ const applyVars = (node, vars) => {
   node.__ffVars = Object.keys(vars);
 };
 
+/* ── lowercase ui ────────────────────────────────────────────────────────
+   the text in the settings tab is written in lowercase, to match the terminal look.
+   with the "lowercase ui" setting off, ui() shows it in sentence case instead (a capital
+   at the start of each sentence, plus the few names that need one). only text that
+   obsidian itself shows goes through ui(): the settings tab, its tooltips and its
+   messages. the terminal panel is always lowercase. */
+const uiCase = { lower: true };
+
+const PROPER = [
+  [/\bcmu typewriter\b/g, 'CMU Typewriter'],
+  [/\bobsidian\b/g, 'Obsidian'],
+  [/\bcss\b/g, 'CSS'],
+  [/\bui\b/g, 'UI'],
+  [/\bpdfs\b/g, 'PDFs'],
+  [/\bmish\b(?!\.[a-z])/g, 'Mish'],      /* the palette, not mish.eza / mish.fastfetch */
+  [/\bpm\b/g, 'PM'],
+  [/(?<![\w./-])git\b(?!\/)/g, 'Git'],      /* not the .git folder */
+];
+
+/* commands stay lowercase even at the start of a sentence */
+const KEEP_LOWER = new Set(['rm', 'eza', 'mv', 'cp', 'mkdir', 'touch']);
+
+const sentence = (text) => {
+  let out = String(text);
+  for (const [re, name] of PROPER) out = out.replace(re, name);
+  return out.replace(/(^|[.!?]\s+)([a-z][\w-]*)/g, (m, lead, word) => (
+    KEEP_LOWER.has(word) ? m : lead + word.charAt(0).toUpperCase() + word.slice(1)
+  ));
+};
+
+const ui = (text) => (uiCase.lower ? text : sentence(text));
+
+const uiOptions = (options) => Object.fromEntries(
+  Object.entries(options).map(([key, label]) => [key, ui(label)])
+);
+
+/* a Setting whose name and description go through ui() */
+class UiSetting extends Setting {
+  setName(name) { return super.setName(typeof name === 'string' ? ui(name) : name); }
+  setDesc(desc) { return super.setDesc(typeof desc === 'string' ? ui(desc) : desc); }
+}
+
 const DEFAULT_SETTINGS = {
+  lowercaseUi: true,     /* settings text in lowercase (true) or sentence case (false) */
   username: '',          /* empty = auto-detect */
   hostname: '',          /* empty = auto-detect */
   showFullPath: true,
@@ -569,7 +613,7 @@ class FetchView extends ItemView {
   }
 
   getViewType() { return VIEW_TYPE; }
-  getDisplayText() { return 'fetch'; }
+  getDisplayText() { return ui('fetch'); }
   getIcon() { return 'cpu'; }
 
   async onOpen() {
@@ -885,7 +929,7 @@ class FetchSettingTab extends PluginSettingTab {
     const found = plugin.detected;
     const hints = Object.fromEntries(INFO);
 
-    const flag = (group, key, name, desc) => new Setting(containerEl)
+    const flag = (group, key, name, desc) => new UiSetting(containerEl)
       .setName(name)
       .setDesc(desc || '')
       .addToggle((toggle) => toggle
@@ -905,11 +949,11 @@ class FetchSettingTab extends PluginSettingTab {
     const holder = (group) => (group ? s[group] : s);
     const dflt = (group, key) => (group ? DEFAULT_SETTINGS[group] : DEFAULT_SETTINGS)[key];
 
-    const drop = (group, key, name, desc, options, kind) => new Setting(containerEl)
+    const drop = (group, key, name, desc, options, kind) => new UiSetting(containerEl)
       .setName(name)
       .setDesc(desc || '')
       .addDropdown((d) => d
-        .addOptions(options)
+        .addOptions(uiOptions(options))
         .setValue(String(holder(group)[key]))
         .onChange((value) => {
           holder(group)[key] = value;
@@ -919,7 +963,7 @@ class FetchSettingTab extends PluginSettingTab {
     /* a slider with a little reset arrow that puts the default back */
     const slide = (group, key, name, desc, lo, hi, step, kind, unit) => {
       let comp = null;
-      return new Setting(containerEl)
+      return new UiSetting(containerEl)
         .setName(name)
         .setDesc(desc || '')
         .addSlider((sl) => {
@@ -934,7 +978,7 @@ class FetchSettingTab extends PluginSettingTab {
         })
         .addExtraButton((b) => b
           .setIcon('rotate-ccw')
-          .setTooltip('back to the default (' + dflt(group, key) + (unit || '') + ')')
+          .setTooltip(ui('back to the default (' + dflt(group, key) + (unit || '') + ')'))
           .onClick(() => {
             holder(group)[key] = dflt(group, key);
             comp.setValue(dflt(group, key));
@@ -942,10 +986,24 @@ class FetchSettingTab extends PluginSettingTab {
           }));
     };
 
-    /* ── who you are ── */
-    new Setting(containerEl).setName('identity').setHeading();
+    /* ── the first setting: how the text in this tab is cased ── */
+    new UiSetting(containerEl)
+      .setName('lowercase ui')
+      .setDesc('show the text in this tab, its tooltips and its messages in lowercase, to match the terminal look. turn it off for normal sentence case.')
+      .addToggle((toggle) => toggle
+        .setValue(s.lowercaseUi !== false)
+        .onChange(async (value) => {
+          s.lowercaseUi = value;
+          uiCase.lower = value;
+          await plugin.saveSettings();
+          plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((leaf) => { if (leaf.updateHeader) leaf.updateHeader(); });
+          this.display();
+        }));
 
-    new Setting(containerEl)
+    /* ── who you are ── */
+    new UiSetting(containerEl).setName('identity').setHeading();
+
+    new UiSetting(containerEl)
       .setName('user name')
       .setDesc('shown in the first pill and the user row. leave empty to use the name your system reports.')
       .addText((text) => text
@@ -956,7 +1014,7 @@ class FetchSettingTab extends PluginSettingTab {
           await plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
+    new UiSetting(containerEl)
       .setName('host name')
       .setDesc("shown after the @ in the user row. leave empty to use your computer's name.")
       .addText((text) => text
@@ -967,7 +1025,7 @@ class FetchSettingTab extends PluginSettingTab {
           await plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
+    new UiSetting(containerEl)
       .setName('show full vault path')
       .setDesc('turn this off to show only the vault name, handy before taking a screenshot.')
       .addToggle((toggle) => toggle
@@ -978,13 +1036,13 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     /* ── what the prompt shows ── */
-    new Setting(containerEl).setName('prompt').setHeading();
+    new UiSetting(containerEl).setName('prompt').setHeading();
     flag('pills', 'user', 'user pill', 'your name, with a logo for your operating system.');
     flag('pills', 'vault', 'vault pill', 'the name of this vault.');
     flag('pills', 'time', 'time pill', 'when obsidian was opened. hover it for the full date and uptime.');
     drop(null, 'pillShape', 'pill shape', 'arrow is the powerline look. round and flat drop the arrow tips (and the little >>> bridge before the time pill) and use gaps instead.',
       { arrow: 'arrow (powerline)', round: 'round', flat: 'flat' }, 'look');
-    new Setting(containerEl)
+    new UiSetting(containerEl)
       .setName('vault pill text')
       .setDesc('what the second pill says. leave it empty for ~/ and the vault name.')
       .addText((text) => text
@@ -996,24 +1054,24 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     /* ── what the panel shows ── */
-    new Setting(containerEl).setName('rows').setHeading();
+    new UiSetting(containerEl).setName('rows').setHeading();
     ROWS.forEach((key) => flag('show', key, ROW_NAMES[key], hints[key]));
     flag('show', 'swatches', 'colour swatches', 'the strip of colour blocks under the rows.');
     flag('show', 'date', 'date line', 'the date line at the bottom of the panel.');
 
     /* ── colours ── */
-    new Setting(containerEl).setName('colours').setHeading();
+    new UiSetting(containerEl).setName('colours').setHeading();
 
     const pickers = [];
     let presetDrop = null;
     let refreshing = false;       /* setValue on a picker must not count as the user picking */
     const shown = () => (s.palette.preset === 'theme' ? themeFills() : s.palette.colours);
 
-    const presets = { theme: 'mish' };
-    Object.keys(PALETTES).forEach((k) => { presets[k] = k; });
-    presets.custom = 'custom';
+    const presets = { theme: ui('mish') };
+    Object.keys(PALETTES).forEach((k) => { presets[k] = ui(k); });
+    presets.custom = ui('custom');
 
-    new Setting(containerEl)
+    new UiSetting(containerEl)
       .setName('palette')
       .setDesc('the six colours of the rainbow. they colour the prompt pills, the rows, the card border, the scrollbar and the ribbon icon. mish is the default: the pastel rainbow this plugin ships, and it follows the colours of your obsidian theme if the theme sets them. pick a preset, then change any colour below. in light mode the text versions are darkened for you.')
       .addDropdown((d) => {
@@ -1033,7 +1091,7 @@ class FetchSettingTab extends PluginSettingTab {
       })
       .addExtraButton((b) => b
         .setIcon('rotate-ccw')
-        .setTooltip('back to mish')
+        .setTooltip(ui('back to mish'))
         .onClick(() => {
           s.palette.preset = 'theme';
           presetDrop.setValue('theme');
@@ -1044,7 +1102,7 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     SLOTS.forEach((slot, i) => {
-      new Setting(containerEl)
+      new UiSetting(containerEl)
         .setName('colour ' + (i + 1))
         .setDesc(slot.used)
         .addColorPicker((c) => {
@@ -1062,7 +1120,7 @@ class FetchSettingTab extends PluginSettingTab {
 
     let inkPicker = null;
     const autoInk = () => (lightTheme() ? '#2a2430' : '#0f0f12');
-    new Setting(containerEl)
+    new UiSetting(containerEl)
       .setName('pill text colour')
       .setDesc('the text on every pill. automatic = dark ink. try white with a dark palette.')
       .addColorPicker((c) => {
@@ -1074,7 +1132,7 @@ class FetchSettingTab extends PluginSettingTab {
       })
       .addExtraButton((b) => b
         .setIcon('rotate-ccw')
-        .setTooltip('back to automatic')
+        .setTooltip(ui('back to automatic'))
         .onClick(() => {
           s.inkColour = '';
           inkPicker.setValue(autoInk());
@@ -1082,7 +1140,7 @@ class FetchSettingTab extends PluginSettingTab {
         }));
 
     /* ── card and layout ── */
-    new Setting(containerEl).setName('card and layout').setHeading();
+    new UiSetting(containerEl).setName('card and layout').setHeading();
     drop('card', 'width', 'card width', 'fit = as wide as the prompt (the same size as mish.eza). full = the whole sidebar.',
       { fit: 'fit the prompt', full: 'full width' }, 'look');
     drop('card', 'hAlign', 'horizontal position', 'only matters for the fit width.', { centre: 'centre', left: 'left' }, 'look');
@@ -1096,13 +1154,13 @@ class FetchSettingTab extends PluginSettingTab {
     slide('card', 'pad', 'outer margin', 'space between the card and the edge of the sidebar.', 0, 32, 1, 'look', 'px');
 
     /* ── font ── */
-    new Setting(containerEl).setName('appearance').setHeading();
+    new UiSetting(containerEl).setName('appearance').setHeading();
 
     const choices = () => {
       const opts = {
-        bundled: 'cmu typewriter (bundled)',
-        obsidian: "obsidian's monospace font",
-        system: 'system monospace',
+        bundled: ui('cmu typewriter (bundled)'),
+        obsidian: ui("obsidian's monospace font"),
+        system: ui('system monospace'),
       };
       const names = new Set(CANDIDATE_FONTS.filter((n) => isInstalled(n)));
       this.scanned.forEach((n) => names.add(n));
@@ -1110,13 +1168,13 @@ class FetchSettingTab extends PluginSettingTab {
       Array.from(names)
         .sort((a, b) => a.localeCompare(b))
         .forEach((n) => { opts['family:' + n] = n; });
-      opts.custom = 'custom…';
+      opts.custom = ui('custom…');
       return opts;
     };
 
     let custom = null;
 
-    new Setting(containerEl)
+    new UiSetting(containerEl)
       .setName('font')
       .setDesc('the default font is bundled with the plugin, so nothing needs installing. or pick a monospace font from this computer.')
       .addDropdown((dropdown) => {
@@ -1131,7 +1189,7 @@ class FetchSettingTab extends PluginSettingTab {
           });
       });
 
-    custom = new Setting(containerEl)
+    custom = new UiSetting(containerEl)
       .setName('custom font')
       .setDesc('any css font-family list, such as "JetBrains Mono", monospace')
       .addText((text) => text
@@ -1143,37 +1201,37 @@ class FetchSettingTab extends PluginSettingTab {
         }));
     custom.settingEl.hidden = s.font !== 'custom';
 
-    new Setting(containerEl)
+    new UiSetting(containerEl)
       .setName('find monospace fonts')
       .setDesc("adds every monospace font installed on this computer to the menu above. obsidian may ask for permission first. if this version can't do it, the menu still lists the common fonts it finds.")
       .addButton((button) => button
-        .setButtonText('scan')
+        .setButtonText(ui('scan'))
         .onClick(async () => {
           button.setDisabled(true);
           try {
             const list = await scanSystemFonts();
             if (!list) {
-              new Notice("this version of obsidian can't list system fonts. use a custom font instead.");
+              new Notice(ui("this version of obsidian can't list system fonts. use a custom font instead."));
             } else {
               this.scanned = list;
               this.fontDropdown.selectEl.empty();
               this.fontDropdown.addOptions(choices());
               this.fontDropdown.setValue(s.font);
-              new Notice('found ' + list.length + ' monospace fonts.');
+              new Notice(ui('found ' + list.length + ' monospace fonts.'));
             }
           } catch (e) {
-            new Notice('could not read the font list. use a custom font instead.');
+            new Notice(ui('could not read the font list. use a custom font instead.'));
           }
           button.setDisabled(false);
         }));
 
     /* ── reset ── */
-    new Setting(containerEl).setName('reset').setHeading();
-    new Setting(containerEl)
+    new UiSetting(containerEl).setName('reset').setHeading();
+    new UiSetting(containerEl)
       .setName('reset appearance')
       .setDesc('puts every colour, shape and card option back to the default. your name, rows, font and prompt pills are not touched.')
       .addButton((button) => button
-        .setButtonText('reset')
+        .setButtonText(ui('reset'))
         .setWarning()
         .onClick(async () => {
           for (const k of ['palette', 'inkColour', 'pillShape', 'vaultLabel', 'card']) {
@@ -1249,6 +1307,7 @@ module.exports = class MishFastfetch extends Plugin {
   async loadSettings() {
     const saved = (await this.loadData()) || {};
     this.settings = sanitise(deepMerge(clone(DEFAULT_SETTINGS), saved));
+    uiCase.lower = this.settings.lowercaseUi;
   }
 
   async saveSettings() {
