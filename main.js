@@ -333,8 +333,21 @@ const mountRainbow = () => {
   svg.dataset.users = String(Number(svg.dataset.users || 0) + 1);
 };
 
-/* point the gradient's six stops at the palette, or back at the theme's variables
-   when the palette is the default */
+/* a colour as the browser sees it right now, for a css value that may hold var() or
+   color-mix(). a gradient stop that only holds `var(...)` text never repaints when the
+   theme flips (the text is the same string, so nothing tells the browser the icon is
+   stale). a real colour does change between light and dark, so the icons follow. */
+const resolveColour = (css) => {
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden;pointer-events:none;color:' + css;
+  document.body.appendChild(probe);
+  const out = getComputedStyle(probe).color;
+  probe.remove();
+  return out;
+};
+
+/* point the gradient's six stops at the palette, or at the theme's colours when the
+   palette is the default. run again on every theme change (see onload). */
 const paintRainbow = (cfg) => {
   const svg = document.getElementById(RAINBOW_ID);
   if (!svg) return;
@@ -343,9 +356,10 @@ const paintRainbow = (cfg) => {
   svg.querySelectorAll('stop').forEach((stop, i) => {
     const sl = SLOTS[i];
     if (!sl) return;
-    stop.style.stopColor = colours
+    const css = colours
       ? (light ? 'color-mix(in oklab, ' + colours[i] + ', black ' + sl.dark + '%)' : colours[i])
       : 'var(' + sl.vf + ', var(' + sl.t + ', ' + DARK_FILLS[i] + '))';
+    stop.style.stopColor = resolveColour(css) || css;
   });
 };
 
@@ -1186,8 +1200,23 @@ module.exports = class MishFastfetch extends Plugin {
     paintRainbow(this.settings);
     this.addSettingTab(new FetchSettingTab(this.app, this));
 
-    /* light <-> dark: custom colours have a darker text version in light mode */
-    this.registerEvent(this.app.workspace.on('css-change', () => this.restyle()));
+    /* theme changes: the ribbon and tab icons, and the darker light-mode text colours,
+       are repainted. css-change fires when obsidian applies a theme; a second pass a
+       moment later covers themes whose css lands just after. the body watcher catches
+       the light <-> dark flip itself, e.g. when the operating system changes it. */
+    const repaint = () => this.restyle();
+    this.registerEvent(this.app.workspace.on('css-change', () => {
+      repaint();
+      window.setTimeout(repaint, 250);
+    }));
+    let wasLight = lightTheme();
+    const watcher = new MutationObserver(() => {
+      if (lightTheme() === wasLight) return;
+      wasLight = lightTheme();
+      repaint();
+    });
+    watcher.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    this.register(() => watcher.disconnect());
 
     this.registerView(VIEW_TYPE, (leaf) => new FetchView(leaf, this));
 

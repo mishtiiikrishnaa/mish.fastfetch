@@ -455,11 +455,16 @@ body.theme-light .vf-swatches span:nth-child(8) {
 
 .mish-fetch-ribbon svg,
 .workspace-tab-header[data-type="tv-fetch-view"] .workspace-tab-header-inner-icon svg {
-  stroke: url(#mish-fetch-rainbow) #ffa6c9 !important;
+  stroke: url(#mish-fetch-rainbow) var(--vf-pink-hi, var(--mz-pink-hi, #ffa6c9)) !important;
 }
 
+/* dark mode glows a little on hover; light mode deepens instead, because
+   brightening a dark-ish icon on a pale sidebar would wash it out */
 .mish-fetch-ribbon:hover svg {
   filter: brightness(1.2);
+}
+body.theme-light .mish-fetch-ribbon:hover svg {
+  filter: brightness(0.88) saturate(1.1);
 }
 
 /* ═══ thin rainbow scrollbar for the fetch panel ═══
